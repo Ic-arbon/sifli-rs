@@ -6,10 +6,10 @@
 // https://github.com/embassy-rs/embassy/tree/main/embassy-stm32
 // Special thanks to the Embassy Project and its contributors for their work!
 
-use core::future::poll_fn;
+// use core::future::poll_fn;
 use core::marker::PhantomData;
 use core::sync::atomic::{compiler_fence, AtomicU8, Ordering};
-use core::task::Poll;
+// use core::task::Poll;
 
 use embassy_embedded_hal::SetConfig;
 // use embassy_hal_internal::drop::OnDrop;
@@ -182,7 +182,7 @@ pub struct Config {
     /// the read will abort and the error will be reported and cleared
     ///
     /// If false: the error is ignored and cleared
-    pub detect_previous_overrun: bool,
+    pub _detect_previous_overrun: bool,
 
     /// Set this to true if the line is considered noise free.
     /// This will increase the receiver’s tolerance to clock deviations,
@@ -214,7 +214,7 @@ impl Default for Config {
             stop_bits: StopBits::STOP1,
             parity: Parity::ParityNone,
             // historical behavior
-            detect_previous_overrun: false,
+            _detect_previous_overrun: false,
             assume_noise_free: false,
             rx_pull: Pull::None,
             duplex: Duplex::Full,
@@ -340,7 +340,7 @@ pub struct UartRx<'d, T: Instance, M: Mode> {
     rx: Option<PeripheralRef<'d, AnyPin>>,
     rts: Option<PeripheralRef<'d, AnyPin>>,
     // rx_dma: Option<ChannelAndRequest<'d>>,
-    detect_previous_overrun: bool,
+    _detect_previous_overrun: bool,
     _phantom: PhantomData<(T, M)>,
 }
 
@@ -514,35 +514,35 @@ impl<'d, T: Instance, M: Mode> UartTx<'d, T, M> {
     }
 }
 
-/// Wait until transmission complete
-async fn flush<T: Instance>(state: &State) -> Result<(), Error> {
-    let r = T::regs();
-    if r.cr1().read().te() && !r.isr().read().tc() {
-        r.cr1().modify(|w| {
-            // enable Transmission Complete interrupt
-            w.set_tcie(true);
-        });
+// /// Wait until transmission complete
+// async fn flush<T: Instance>(state: &State) -> Result<(), Error> {
+//     let r = T::regs();
+//     if r.cr1().read().te() && !r.isr().read().tc() {
+//         r.cr1().modify(|w| {
+//             // enable Transmission Complete interrupt
+//             w.set_tcie(true);
+//         });
 
-        compiler_fence(Ordering::SeqCst);
+//         compiler_fence(Ordering::SeqCst);
 
-        // future which completes when Transmission complete is detected
-        let abort = poll_fn(move |cx| {
-            state.rx_waker.register(cx.waker());
+//         // future which completes when Transmission complete is detected
+//         let abort = poll_fn(move |cx| {
+//             state.rx_waker.register(cx.waker());
 
-            let sr = r.isr().read();
-            if sr.tc() {
-                // Transmission complete detected
-                return Poll::Ready(());
-            }
+//             let sr = r.isr().read();
+//             if sr.tc() {
+//                 // Transmission complete detected
+//                 return Poll::Ready(());
+//             }
 
-            Poll::Pending
-        });
+//             Poll::Pending
+//         });
 
-        abort.await;
-    }
+//         abort.await;
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 fn blocking_flush<T: Instance>() -> Result<(), Error> {
     let r = T::regs();
@@ -672,7 +672,7 @@ fn half_duplex_set_rx_tx_before_write(r: &Regs, enable_readback: bool) {
 //         let transfer = unsafe { ch.read(r.rdr(), buffer, Default::default()) };
 
 //         // clear ORE flag just before enabling DMA Rx Request: can be mandatory for the second transfer
-//         if !self.detect_previous_overrun {
+//         if !self._detect_previous_overrun {
 //             let sr = r.isr().read();
 //             // This read also clears the error and idle interrupt flags on v1.
 //             unsafe { r.rdr().as_ptr().read_volatile().0 as u8 };
@@ -880,7 +880,7 @@ impl<'d, T: Instance, M: Mode> UartRx<'d, T, M> {
             rx,
             rts,
             // rx_dma,
-            detect_previous_overrun: config.detect_previous_overrun,
+            _detect_previous_overrun: config._detect_previous_overrun,
         };
         this.enable_and_configure(&config)?;
         Ok(this)
@@ -1271,7 +1271,7 @@ impl<'d, T: Instance, M: Mode> Uart<'d, T, M> {
                 rx,
                 rts,
                 // rx_dma,
-                detect_previous_overrun: config.detect_previous_overrun,
+                _detect_previous_overrun: config._detect_previous_overrun,
             },
         };
         this.enable_and_configure(&config)?;
@@ -1383,24 +1383,7 @@ fn set_baudrate<T: Instance>(kernel_clock: Hertz, baudrate: u32) -> Result<(), C
 }
 
 fn find_and_set_brr(r: Regs, kind: Kind, kernel_clock: Hertz, baudrate: u32) -> Result<bool, ConfigError> {
-    #[cfg(not(usart_v4))]
     static DIVS: [(u16, ()); 1] = [(1, ())];
-
-    #[cfg(usart_v4)]
-    static DIVS: [(u16, vals::Presc); 12] = [
-        (1, vals::Presc::DIV1),
-        (2, vals::Presc::DIV2),
-        (4, vals::Presc::DIV4),
-        (6, vals::Presc::DIV6),
-        (8, vals::Presc::DIV8),
-        (10, vals::Presc::DIV10),
-        (12, vals::Presc::DIV12),
-        (16, vals::Presc::DIV16),
-        (32, vals::Presc::DIV32),
-        (64, vals::Presc::DIV64),
-        (128, vals::Presc::DIV128),
-        (256, vals::Presc::DIV256),
-    ];
 
     let (mul, brr_min, brr_max) = match kind {
         // Kind::Lpuart => {
@@ -1430,8 +1413,6 @@ fn find_and_set_brr(r: Regs, kind: Kind, kernel_clock: Hertz, baudrate: u32) -> 
             if brr * 2 >= brr_min && kind == Kind::Uart {
                 over8 = true;
                 r.brr().write_value(regs::Brr(((brr << 1) & !0xF) | (brr & 0x07)));
-                #[cfg(usart_v4)]
-                r.presc().write(|w| w.set_prescaler(_presc_val));
                 found_brr = Some(brr);
                 break;
             }
@@ -1440,8 +1421,6 @@ fn find_and_set_brr(r: Regs, kind: Kind, kernel_clock: Hertz, baudrate: u32) -> 
 
         if brr < brr_max {
             r.brr().write_value(regs::Brr(brr));
-            #[cfg(usart_v4)]
-            r.presc().write(|w| w.set_prescaler(_presc_val));
             found_brr = Some(brr);
             break;
         }
