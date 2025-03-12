@@ -98,7 +98,7 @@ pub fn get_clk_usb_freq() -> Option<Hertz> {
     match HPSYS_RCC.csr().read().sel_usbc() {
         UsbSel::ClkSys => get_clk_sys_freq(),
         UsbSel::Dll2 => get_clk_dll2_freq(),
-    }
+    }.map(|f| f / HPSYS_RCC.usbcr().read().div())
 }
 
 pub fn get_clk_aud_pll_freq() -> Option<Hertz> {
