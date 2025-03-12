@@ -21,26 +21,25 @@ Rust Hardware Abstraction Layer (HAL) and [Embassy](https://github.com/embassy-r
 
 ## Get Started
 
-[Get Started](../README.md#get-started)
-
-
+[Flash and Debug Guide](../docs/flash_and_debug)
 
 ## Status
 
-| Family    | SF32LB52x        |
-| --------- | ---------------- |
-| Embassy   | ✅+               |
-| RCC       | ✅                |
-| GPIO      | ✅                |
-| INTERRUPT | ✅                |
-| PMU       | DVFS switch only |
-| DMA       |                  |
-| USART     |                  |
-| I2C       |                  |
-| SPI       |                  |
-| Bluetooth |                  |
-| USB       |                  |
-| ePicasso  |                  |
+| Family               | SF32LB52x        |
+| -------------------- | ---------------- |
+| Embassy              | ✅+               |
+| RCC                  | ✅                |
+| GPIO                 | ✅                |
+| INTERRUPT            | ✅                |
+| PINMUX (type system) | ✅                |
+| PMU                  | DVFS switch only |
+| DMA                  |                  |
+| USART                | ✅+               |
+| I2C                  |                  |
+| SPI                  |                  |
+| Bluetooth            |                  |
+| USB                  |                  |
+| ePicasso             |                  |
 
 - ✅ : Implemented
 - Blank : Not implemented
