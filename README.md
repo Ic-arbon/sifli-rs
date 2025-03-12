@@ -37,52 +37,7 @@ Rust Hardware Abstraction Layer (HAL) for SiFli MCUs.
 
 ## Get Started
 
-### Build & Flash
-
-First, install [cargo-binutils](https://github.com/rust-embedded/cargo-binutils):
-
-```bash
-cargo install cargo-binutils
-rustup component add llvm-tools
-```
-
-Next, use `objcopy` to generate a `.bin` file:
-
-```bash
-cargo objcopy --bin blinky -- -O binary main.bin
-```
-
-Then, compile the [blink/no-os](https://github.com/OpenSiFli/SiFli-SDK/tree/main/example/get-started/blink/no-os) project in the SDK and copy the `main.bin` file into the build directory (e.g., `build_em-lb525_hcpu`), replacing the existing `main.bin` file.
-
-Make sure the new firmware size is smaller than the old one; otherwise, you may need to manually modify the `ftab` or use [sifli-flash-table](sifli-flash-table/README.md) to generate a new `ftab.bin`.
-
-Afterward, use the same programming method as with the SDK (for example, running `build_em-lb525_hcpu\uart_download.bat` or programming via JLink).
-
-### Debug
-
-By utilizing [SifliUsartServer](https://github.com/OpenSiFli/SiFli-SDK/tree/main/tools/SifliUsartServer) , you can generate a J-Link server, which then allows you to connect to it using Cortex-Debug within VS Code.
-
-```json
-"configurations": [
-        {
-            "cwd": "${workspaceFolder}",
-            "name": "Cortex Debug",
-            "request": "attach",
-            "type": "cortex-debug",
-            "device": "Cortex-M33",
-            "runToEntryPoint": "entry",
-            "showDevDebugOutput": "none",
-            "servertype": "jlink",
-            "serverpath": "xxx/Dev/Jlink/JLink_V812e/JLinkGDBServerCL.exe",
-            "ipAddress": "127.0.0.1:19025",
-            "interface": "swd",
-            "svdFile": "xxx/sifli-pac/svd/SF32LB52x.svd",
-            "executable": "examples/sf32lb52x/target/thumbv8m.main-none-eabi/debug/blinky"
-        },
-    ]
-```
-
-In certain HardFault scenarios, the Cortex-Debug connection may be interrupted. If this occurs, you might need to resort to J-Link Commander or alternative tools for debugging.
+[Flash and Debug Guide](docs/flash_and_debug)
 
 ## License
 

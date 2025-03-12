@@ -1,6 +1,8 @@
 [target.thumbv8m.main-none-eabi]
-# unimplemented
-runner = 'probe-rs run --chip SF32LB52x'
+# Currently, probe-rs can only execute `attach`, not `run` or `download`.
+# You can refer to the Download and Debug documentation for more information.
+# runner = 'probe-rs run --chip SF32LB52'
+
 # Cortex-M33 has MSPLIM, so we don't need flip-link
 # linker= "flip-link"
 
