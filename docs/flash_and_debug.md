@@ -1,12 +1,14 @@
 # SiFli ❤️ Rust - Flash and Debug Guide
 
+[中文](flash_and_debug_zh.md) | English
+
 ## Flash Guide
 
 Typically, three firmware files need to be flashed. Taking sf52 with MPI2-mounted external Flash as an example, these are flash table@0x12000000, bootloader@0x12010000, and user firmware@0x12020000.
 
 The chip comes with a bootloader from the factory, or you can choose not to overwrite it after flashing it once. The flash table contains information about the actual firmware size, so you either need to update it each time or set the firmware size in the flash table to be very large.
 
-You can use [sifli-flash-table](https://claude.ai/chat/sifli-flash-table/README.md) to generate a new `ftab.bin`. (This is the only method for Linux and Mac users; for Windows, you can also use the `ftab.bin` compiled from the SDK. Make sure the new firmware size is smaller than it)
+You can use [sifli-flash-table](../sifli-flash-table/README.md) to generate a new `ftab.bin`. (This is the only method for Linux and Mac users; for Windows, you can also use the `ftab.bin` compiled from the SDK. Make sure the new firmware size is smaller than it)
 
 ### SFTool (Available on Linux, Mac and Windows)
 
@@ -43,7 +45,7 @@ cargo objcopy --bin blinky -- -O binary main.bin
 
 Then, compile the [blink/no-os](https://github.com/OpenSiFli/SiFli-SDK/tree/main/example/get-started/blink/no-os) project in the SDK and copy the `main.bin` file into the build directory (e.g., `build_em-lb525_hcpu`), replacing the existing `main.bin` file.
 
-Make sure the new firmware size is smaller than the old one; otherwise, you may need to manually modify the `ftab` or use [sifli-flash-table](https://claude.ai/chat/sifli-flash-table/README.md) to generate a new `ftab.bin`.
+Make sure the new firmware size is smaller than the old one; otherwise, you may need to manually modify the `ftab` or use [sifli-flash-table](../sifli-flash-table/README.md) to generate a new `ftab.bin`.
 
 Afterward, use the same programming method as with the SDK (for example, running `build_em-lb525_hcpu\uart_download.bat` or programming via JLink).
 
