@@ -8,16 +8,16 @@
 [crates]: https://crates.io/crates/sifli-hal
 [githubrepo]: https://github.com/OpenSiFli/sifli-hal-rs
 
-[中文](README_zh.md) | English
+[English](README.md) | 中文
 
-Rust support for SiFli MCUs, including HAL, PAC, etc.
+为 SiFli MCU 提供的 Rust 支持，包括 HAL、PAC 等。
 
 > [!WARNING]
 > 
-> This project is working-in-progress and not ready for production use.
+> 本 project 仍在开发中，尚未准备好用于生产环境。
 
-## Crates
-| Github                                                       | crates.io                                       | docs.rs                                    | Support Status       |
+## Crates 列表
+| Github                                                       | crates.io                                       | docs.rs                                    | 支持状态            |
 | ------------------------------------------------------------ | ----------------------------------------------- | ------------------------------------------ | -------------------- |
 | [sifli-hal](https://github.com/OpenSiFli/sifli-hal-rs/tree/main/sifli-hal) | [![Crates.io][hal-badge-version]][hal-cratesio] | [![docs.rs][hal-badge-docsrs]][hal-docsrs] | ![][badge-community] |
 | [sifli-pac](https://github.com/OpenSiFli/sifli-pac)          | [![Crates.io][pac-badge-version]][pac-cratesio] | [![docs.rs][pac-badge-docsrs]][pac-docsrs] | ![][badge-community] |
@@ -37,20 +37,18 @@ Rust support for SiFli MCUs, including HAL, PAC, etc.
 [pac-badge-version]: https://img.shields.io/crates/v/sifli-pac?style=for-the-badge
 [pac-badge-docsrs]: https://img.shields.io/docsrs/sifli-pac?style=for-the-badge
 
-## Let's GO!
+## 快速开始！
 
-[Introduction to Embedded Rust](docs/intro_to_embedded_rust.md)
+[嵌入式 Rust 简介](docs/intro_to_embedded_rust.md)
 
-[Get Started](docs/get_started.md)
+[入门指南](docs/get_started.md)
 
-[Flash and Debug Guide](docs/flash_and_debug.md)
+[烧录和调试指南](docs/flash_and_debug.md)
 
-## License
+## 许可证
 
-This project is licensed under either of
+本项目采用以下两种许可证之一（由您选择）：
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or
-  <http://www.apache.org/licenses/LICENSE-2.0>)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
-
-at your option.
+- Apache License, Version 2.0 （[LICENSE-APACHE](LICENSE-APACHE) 或
+  <http://www.apache.org/licenses/LICENSE-2.0>）
+- MIT 许可证 （[LICENSE-MIT](LICENSE-MIT) 或 <http://opensource.org/licenses/MIT>）

@@ -2,7 +2,6 @@
 name = "sifli-hal"
 version = "0.0.0"
 edition = "2021"
-authors = ["OpenSiFli"]
 description = "Hardware Abstraction Layer (HAL) for SiFli MCUs"
 categories = ["hardware-support", "embedded", "no-std"]
 keywords = ["hal", "sf32", "sifli"]

@@ -13,15 +13,21 @@
 [docsrs]: https://docs.rs/sifli-hal
 [githubrepo]: https://github.com/OpenSiFli/sifli-hal
 
+[中文](README_zh.md) | English
+
 Rust Hardware Abstraction Layer (HAL) and [Embassy](https://github.com/embassy-rs/embassy) driver for SiFli MCUs.
 
 > [!WARNING]
 > 
-> This crate is a working-in-progress and not ready for production use.
+> This project is working-in-progress and not ready for production use.
 
-## Get Started
+## Let's GO!
 
-[Flash and Debug Guide](../docs/flash_and_debug)
+[Introduction to Embedded Rust](../docs/intro_to_embedded_rust.md)
+
+[Get Started](../docs/get_started.md)
+
+[Flash and Debug Guide](../docs/flash_and_debug.md)
 
 ## Status
 
