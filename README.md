@@ -1,4 +1,4 @@
-# SiFli Rust HAL
+# SiFli-rs
 
 [![Crates.io][badge-license]][crates]
 [![Support status][badge-support-status]][githubrepo]
@@ -6,9 +6,9 @@
 [badge-license]: https://img.shields.io/crates/l/sifli-hal?style=for-the-badge
 [badge-support-status]: https://img.shields.io/badge/Support_status-Community-mediumpurple?style=for-the-badge
 [crates]: https://crates.io/crates/sifli-hal
-[githubrepo]: https://github.com/OpenSiFli/sifli-rs
+[githubrepo]: https://github.com/OpenSiFli/sifli-hal-rs
 
-Rust Hardware Abstraction Layer (HAL) for SiFli MCUs.
+Rust support for SiFli MCUs, including HAL, PAC, etc.
 
 > [!WARNING]
 > 
@@ -17,9 +17,9 @@ Rust Hardware Abstraction Layer (HAL) for SiFli MCUs.
 ## Crates
 | Github                                                       | crates.io                                       | docs.rs                                    | Support Status       |
 | ------------------------------------------------------------ | ----------------------------------------------- | ------------------------------------------ | -------------------- |
-| [sifli-hal](https://github.com/OpenSiFli/sifli-rs/tree/main/sifli-hal) | [![Crates.io][hal-badge-version]][hal-cratesio] | [![docs.rs][hal-badge-docsrs]][hal-docsrs] | ![][badge-community] |
+| [sifli-hal](https://github.com/OpenSiFli/sifli-hal-rs/tree/main/sifli-hal) | [![Crates.io][hal-badge-version]][hal-cratesio] | [![docs.rs][hal-badge-docsrs]][hal-docsrs] | ![][badge-community] |
 | [sifli-pac](https://github.com/OpenSiFli/sifli-pac)          | [![Crates.io][pac-badge-version]][pac-cratesio] | [![docs.rs][pac-badge-docsrs]][pac-docsrs] | ![][badge-community] |
-| [sifli-flash-table ](https://github.com/OpenSiFli/sifli-rs/tree/main/sifli-flash-table) |                                                 |                                            | ![][badge-community] |
+| [sifli-flash-table ](https://github.com/OpenSiFli/sifli-hal-rs/tree/main/sifli-flash-table) |                                                 |                                            | ![][badge-community] |
 
 [badge-community]: https://img.shields.io/badge/Community-mediumpurple?style=for-the-badge
 
@@ -35,9 +35,13 @@ Rust Hardware Abstraction Layer (HAL) for SiFli MCUs.
 [pac-badge-version]: https://img.shields.io/crates/v/sifli-pac?style=for-the-badge
 [pac-badge-docsrs]: https://img.shields.io/docsrs/sifli-pac?style=for-the-badge
 
-## Get Started
+## Let's GO!
 
-[Flash and Debug Guide](docs/flash_and_debug)
+[Introduction to Embedded Rust](docs/intro_to_embedded_rust.md)
+
+[Get Started](docs/get_started.md)
+
+[Flash and Debug Guide](docs/flash_and_debug.md)
 
 ## License
 

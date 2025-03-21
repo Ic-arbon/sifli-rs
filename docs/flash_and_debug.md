@@ -1,4 +1,4 @@
-# Flash and Debug Guide
+# SiFli ❤️ Rust - Flash and Debug Guide
 
 ## Flash Guide
 

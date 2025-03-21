@@ -19,9 +19,13 @@ Rust Hardware Abstraction Layer (HAL) and [Embassy](https://github.com/embassy-r
 > 
 > This crate is a working-in-progress and not ready for production use.
 
-## Get Started
+## Let's GO!
 
-[Flash and Debug Guide](../docs/flash_and_debug)
+[Introduction to Embedded Rust](../docs/intro_to_embedded_rust.md)
+
+[Get Started](../docs/get_started.md)
+
+[Flash and Debug Guide](../docs/flash_and_debug.md)
 
 ## Status
 
