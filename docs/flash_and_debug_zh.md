@@ -26,6 +26,28 @@ sftool -c SF32LB52 -p COM7 write_flash write_flash bootloader.bin@0x12010000 app
 
 如果文件格式包含地址信息，例如`hex`或`elf`，则@ADDRESS是可选的。
 
+在烧录完`ftab.bin`和`bootloader.bin`后，您可以选择只烧录application（但是需要注意，您的application的bin的大小需要小于`ftab.bin`中记录的大小）。在`examples/sf32lb52x/.cargo/config.toml`中，您需要将`runner`设置为 sftool:
+
+```bash
+runner = 'sftool -c SF32LB52 -p <Your_Port> --compat write_flash'
+```
+
+然后，您就可以正常使用`cargo run`命令来烧录了：
+
+```shell
+$ cargo run --bin blinky
+
+    ...
+    ...
+    Finished `release` profile [optimized] target(s) in 0.16s
+     Running `sftool -c SF32LB52 --port /dev/cu.xxxxxx --compat write_flash target/thumbv8m.main-none-eabi/release/blinky`
+[0x00]   Connected success!                                                                                                                                       
+[0x01]   Download stub success!                                                                                                                                   
+[0x02]   Need to re-download                                                                                                                                      
+[0x03] Download at Download success!... ===================================================================================================== 15.16 KiB/s 100.000%
+[0x04]   Verify success!       
+```
+
 详细信息请参阅[OpenSiFli/sftool](https://github.com/OpenSiFli/sftool)。
 
 ### SiFliUartDownload (仅限Windows)
@@ -53,27 +75,27 @@ cargo objcopy --bin blinky -- -O binary main.bin
 
 ### probe-rs (适用于Linux、Mac和Windows)
 
-在[probe-rs #3150](https://github.com/probe-rs/probe-rs/pull/3150)中，SiFliUart调试接口已经被合并。在probe-rs的下一个版本发布之前，您可能需要从master分支源代码安装：
+在[probe-rs](https://github.com/probe-rs/probe-rs)的最新版本(v0.28.0)中，SiFliUart调试接口已经被合并。您需要安装最新版本的probe-rs：
 
 ```bash
-cargo install probe-rs-tools --git https://github.com/probe-rs/probe-rs --branch master --force
+cargo install probe-rs-tools --force
 ```
 
 要使`probe-rs`将您的串口识别为`sf32`的调试端口，请按照以下方法之一操作：
 
 方法1：修改CH343的`production string`，使其包含关键字`SiFli`（不区分大小写）。
 
-方法2：设置环境变量`SIFLI_UART_DEBUG`，然后重启软件或计算机使更改生效。使用此方法，probe-rs将识别所有串口为SiFliUart调试接口。
+方法2：设置环境变量`SIFLI_UART_DEBUG=1`，然后重启软件或计算机使更改生效。使用此方法，probe-rs将识别所有串口为SiFliUart调试接口。
 
 **目前，probe-rs无法烧录程序（不能使用`run`或`download`），只能使用`attach`。**
 
 ```bash
-probe-rs attach --chip SF32LB52 target\thumbv8m.main-none-eabi\debug\blinky
+SIFLI_UART_DEBUG=1 probe-rs attach --chip SF32LB52 target\thumbv8m.main-none-eabi\debug\blinky
 ```
 
 然后您可以看到defmt rtt日志输出并使用调试功能。
 
-以下是一个参考VSCode配置文件：
+以下是一个VSCode的launch.json配置文件，供参考：
 
 ```json
 {
@@ -82,17 +104,31 @@ probe-rs attach --chip SF32LB52 target\thumbv8m.main-none-eabi\debug\blinky
         {
             "type": "probe-rs-debug",
             "request": "attach",
-            "name": "probe-rs",
-            "cwd": "${workspaceFolder}",
-            "connectUnderReset": false,
+            "name": "probe_rs attach sf32lb52",
             "chip": "SF32LB52",
+            "probe": "1a86:55d3:<Your_Port>",
             "coreConfigs": [
                 {
                     "coreIndex": 0,
-                    "svdFile": "xxx/sifli-pac/svd/SF32LB52x.svd",
-                    "programBinary": "examples/sf32lb52x/target/thumbv8m.main-none-eabi/debug/blinky"
-                }
-            ]
+                    "programBinary": "examples/sf32lb52x/target/thumbv8m.main-none-eabi/debug/blinky",
+                    "rttEnabled": true,
+                    "rttChannelFormats": [
+                      {
+                        "channelNumber": 0,
+                        "dataFormat": "String",
+                        "showTimestamps": true
+                      },
+                      {
+                        "channelNumber": 1,
+                        "dataFormat": "BinaryLE"
+                      }
+                    ]
+                },
+            ],
+            "env": {
+                "RUST_LOG": "info",
+                "SIFLI_UART_DEBUG": "1",
+            },
         }
     ]
 }

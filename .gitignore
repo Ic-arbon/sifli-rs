@@ -11,6 +11,7 @@ target/
 
 # RustRover
 .idea/
+
 # Visual Studio Code
 .vscode/
 
@@ -20,3 +21,9 @@ examples/**/Cargo.lock
 scripts/output/
 output/
 temp/
+
+# macOS
+.DS_Store
+
+# firmware file
+*.bin
