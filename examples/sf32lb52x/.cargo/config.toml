@@ -1,7 +1,7 @@
 [target.thumbv8m.main-none-eabi]
 # Currently, probe-rs can only execute `attach`, not `run` or `download`.
 # You can refer to the Download and Debug documentation for more information.
-# runner = 'probe-rs run --chip SF32LB52'
+runner = 'sftool -c SF32LB52 --port <YOUR_PORT_HERE> --compat write_flash'
 
 # Cortex-M33 has MSPLIM, so we don't need flip-link
 # linker= "flip-link"
