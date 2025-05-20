@@ -1,0 +1,34 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "probe-rs-debug",
+            "request": "attach",
+            "name": "probe_rs attach sf32lb52",
+            "chip": "SF32LB52",
+            "probe": "1a86:55d3:<Your_Port>",
+            "coreConfigs": [
+                {
+                    "coreIndex": 0,
+                    "programBinary": "examples/sf32lb52x/target/thumbv8m.main-none-eabi/debug/blinky",
+                    "rttEnabled": true,
+                    "rttChannelFormats": [
+                      {
+                        "channelNumber": 0,
+                        "dataFormat": "String",
+                        "showTimestamps": true
+                      },
+                      {
+                        "channelNumber": 1,
+                        "dataFormat": "BinaryLE"
+                      }
+                    ]
+                },
+            ],
+            "env": {
+                "RUST_LOG": "info",
+                "SIFLI_UART_DEBUG": "1",
+            },
+        }
+    ]
+}
