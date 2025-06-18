@@ -29,7 +29,7 @@ impl HpsysPin {
 
     // Clear ISR and open drain flags
     pub fn clear_flags(&mut self) {
-        if self.pin % 32 == 0 {
+        if self.pin / 32 == 0 {
             self.gpio().isr0().write_value(regs::Isr0(self.bit()));
             self.gpio().iphcr0().write_value(regs::Iphcr0(self.bit()));
         } else {  
@@ -39,7 +39,7 @@ impl HpsysPin {
     }
 
     pub fn disable_interrupt(&mut self) {
-        if self.pin % 32 == 0 {
+        if self.pin / 32 == 0 {
             self.gpio().iecr0().write_value(regs::Iecr0(self.bit()));
         } else {
             self.gpio().iecr1().write_value(regs::Iecr1(self.bit())); 
@@ -50,7 +50,7 @@ impl HpsysPin {
     }
 
     pub fn enable_interrupt(&mut self) {
-        if self.pin % 32 == 0 {
+        if self.pin / 32 == 0 {
             self.gpio().iesr0().write_value(regs::Iesr0(self.bit()));
         } else {
             self.gpio().iesr1().write_value(regs::Iesr1(self.bit()));
