@@ -9,7 +9,7 @@ repository = "https://github.com/OpenSiFli/sifli-rs"
 documentation = "https://docs.rs/sifli-hal"
 homepage = "https://github.com/OpenSiFli/sifli-rs"
 readme = "README.md"
-license = "MIT OR Apache-2.0"
+license = "Apache-2.0"
 
 [dependencies]
 # sifli-pac = { version = "0.0.0", path = "../../sifli-pac" }

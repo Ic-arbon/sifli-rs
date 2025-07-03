@@ -69,10 +69,4 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
 
 ## 许可证
 
-本项目采用以下两种许可证之一：
-
-- Apache许可证2.0版 ([LICENSE-APACHE](../LICENSE-APACHE) 或 <http://www.apache.org/licenses/LICENSE-2.0>)
-
-- MIT许可证 ([LICENSE-MIT](../LICENSE-MIT) 或 <http://opensource.org/licenses/MIT>)
-
-由您选择。
+本项目采用 Apache 2.0许可证（[LICENSE](../LICENSE) 或 <http://www.apache.org/licenses/LICENSE-2.0>）。

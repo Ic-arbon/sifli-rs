@@ -47,8 +47,4 @@
 
 ## 许可证
 
-本项目采用以下两种许可证之一（由您选择）：
-
-- Apache License, Version 2.0 （[LICENSE-APACHE](LICENSE-APACHE) 或
-  <http://www.apache.org/licenses/LICENSE-2.0>）
-- MIT 许可证 （[LICENSE-MIT](LICENSE-MIT) 或 <http://opensource.org/licenses/MIT>）
+本项目采用 Apache 2.0许可证（[LICENSE](LICENSE) 或 <http://www.apache.org/licenses/LICENSE-2.0>）。
