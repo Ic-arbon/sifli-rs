@@ -1,0 +1,15 @@
+hcpu:
+  - name: GPADC
+    vbat_channel_id: 7
+    first_channel_pin: 28
+    # example\hal\adc\adc_battery\src\main.c
+    vol_offset: 822
+    vol_ratio: 1068
+    pins:
+      - PA28
+      - PA29
+      - PA30
+      - PA31
+      - PA32
+      - PA33
+      - PA34
