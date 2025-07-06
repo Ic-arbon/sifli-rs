@@ -487,6 +487,22 @@ impl<'d> OutputOpenDrain<'d> {
     }
 }
 
+pub struct Analog<'d> {
+    _pin: Flex<'d>,
+}
+
+impl<'d> Analog<'d> {
+    /// Create GPIO analog driver for a [Pin].
+    #[inline]
+    pub fn new(pin: impl Peripheral<P = impl Pin> + 'd) -> Self {
+        let mut pin = Flex::new(pin);
+        pin.set_as_analog();
+        Self { _pin: pin}
+    }
+}
+
+
+
 /// GPIO flexible pin.
 ///
 /// This pin can be either an input or output pin. The output level register bit will remain
@@ -524,6 +540,11 @@ impl<'d> Flex<'d> {
     /// Configure pin as open drain output
     pub fn set_as_output_od(&mut self) {
         self.inner.set_as_output_od();
+    }
+
+    /// Configure pin as analog mode
+    pub fn set_as_analog(&mut self) {
+        self.inner.set_as_analog();
     }
 
     /// Returns whether pin is configured as output
@@ -645,7 +666,7 @@ impl<'d> Drop for Flex<'d> {
     }
 }
 
-pub(crate) struct AfType {
+pub struct AfType {
     pub(crate) pull: Pull,
 }
 

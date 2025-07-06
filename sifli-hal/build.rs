@@ -88,6 +88,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pinmux_path = data_dir.join("pinmux.yaml");
     let pinmux_content = fs::read_to_string(&pinmux_path)?;
     let pinmux: build_serde::Pinmux = serde_yaml::from_str(&pinmux_content)?;
+
+    // Read and parse adc.yaml
+    let adc_path = data_dir.join("adc.yaml");
+    let adc_content = fs::read_to_string(&adc_path)?;
+    let adc: build_serde::Adc = serde_yaml::from_str(&adc_content)?;
     
     // Get output path from env
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
@@ -116,6 +121,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Generate pin implementations
     let pin_impls = generate_pin_impls(&pinmux, &pinmux_signals, &cfg_ir.fieldsets);
     token_stream.extend(pin_impls);
+
+    // Generate ADC implementations
+    let adc_impls = generate_adc_impls(&adc);
+    token_stream.extend(adc_impls);
 
     // Write to file
     let mut file = File::create(&dest_path).unwrap();
@@ -500,4 +509,31 @@ fn rustfmt(path: impl AsRef<Path>) {
             }
         }
     }
+}
+
+fn generate_adc_impls(adc: &build_serde::Adc) -> TokenStream {
+    let mut implementations = TokenStream::new();
+
+    for adc_peri in &adc.hcpu {
+        let vbat_channel_id = adc_peri.vbat_channel_id;
+        let first_channel_pin = adc_peri.first_channel_pin;
+        let vol_offset = adc_peri.vol_offset;
+        let vol_ratio = adc_peri.vol_ratio;
+
+        implementations.extend(quote! {
+            pub const VBAT_CHANNEL_ID: u8 = #vbat_channel_id;
+            pub const FIRST_CHANNEL_PIN: u8 = #first_channel_pin;
+            pub const VOL_OFFSET: u16 = #vol_offset;
+            pub const VOL_RATIO: u16 = #vol_ratio;
+        });
+
+        for pin_name_str in &adc_peri.pins {
+            let pin_ident = format_ident!("{}", pin_name_str);
+            implementations.extend(quote! {
+                impl crate::adc::AdcPin for peripherals::#pin_ident {}
+            });
+        }
+    }
+
+    implementations
 }

@@ -59,6 +59,22 @@ pub struct PinFunction {
     pub value: u8,
 }
 
+// ---------- adc.yaml ----------
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Adc {
+    pub hcpu: Vec<AdcPeripheral>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AdcPeripheral {
+    pub name: String,
+    pub vbat_channel_id: u8,
+    pub first_channel_pin: u8,
+    pub vol_offset: u16,
+    pub vol_ratio: u16,
+    pub pins: Vec<String>,
+}
 
 // ---------- HPSYS_xxx.yaml ----------
 
