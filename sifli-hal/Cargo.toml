@@ -1,6 +1,6 @@
 [package]
 name = "sifli-hal"
-version = "0.0.0"
+version = "0.1.0"
 edition = "2021"
 description = "Hardware Abstraction Layer (HAL) for SiFli MCUs"
 categories = ["hardware-support", "embedded", "no-std"]
@@ -12,7 +12,7 @@ readme = "README.md"
 license = "Apache-2.0"
 
 [dependencies]
-# sifli-pac = { version = "0.0.0", path = "../../sifli-pac" }
+# sifli-pac = { version = "0.1.0", path = "../../sifli-pac" }
 sifli-pac = { git = "https://github.com/OpenSiFli/sifli-pac" }
 
 embassy-sync = { version = "0.7.0" }
@@ -89,3 +89,6 @@ _time-driver = ["embassy-time-driver", "embassy-time-queue-utils"]
 ## Enable this feature to disable the overclocking check.
 ## DO NOT ENABLE THIS FEATURE UNLESS YOU KNOW WHAT YOU'RE DOING.
 unchecked-overclocking = []
+
+[package.metadata.docs.rs]
+default-target = "thumbv8m.main-none-eabihf"
