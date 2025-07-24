@@ -27,6 +27,8 @@ Rust Hardware Abstraction Layer (HAL) and [Embassy](https://github.com/embassy-r
 
 [Get Started](../docs/get_started.md)
 
+[examples](examples)
+
 [Flash and Debug Guide](../docs/flash_and_debug.md)
 
 ## Status

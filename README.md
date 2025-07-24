@@ -21,7 +21,7 @@ Rust support for SiFli MCUs, including HAL, PAC, etc.
 | ------------------------------------------------------------ | ----------------------------------------------- | ------------------------------------------ | -------------------- |
 | [sifli-hal](https://github.com/OpenSiFli/sifli-hal-rs/tree/main/sifli-hal) | [![Crates.io][hal-badge-version]][hal-cratesio] | [![docs.rs][hal-badge-docsrs]][hal-docsrs] | ![][badge-community] |
 | [sifli-pac](https://github.com/OpenSiFli/sifli-pac)          | [![Crates.io][pac-badge-version]][pac-cratesio] | [![docs.rs][pac-badge-docsrs]][pac-docsrs] | ![][badge-community] |
-| [sifli-flash-table ](https://github.com/OpenSiFli/sifli-hal-rs/tree/main/sifli-flash-table) |                                                 |                                            | ![][badge-community] |
+| [sifli-flash-table ](https://github.com/OpenSiFli/sifli-hal-rs/tree/main/sifli-flash-table) | [![Crates.io][ftab-badge-version]][ftab-cratesio] | [![docs.rs][ftab-badge-docsrs]][ftab-docsrs] | ![][badge-community] |
 
 [badge-community]: https://img.shields.io/badge/Community-mediumpurple?style=for-the-badge
 
@@ -37,11 +37,21 @@ Rust support for SiFli MCUs, including HAL, PAC, etc.
 [pac-badge-version]: https://img.shields.io/crates/v/sifli-pac?style=for-the-badge
 [pac-badge-docsrs]: https://img.shields.io/docsrs/sifli-pac?style=for-the-badge
 
+[ftab-cratesio]: https://crates.io/crates/sifli-flash-table
+[ftab-docsrs]: https://docs.rs/sifli-flash-table
+[ftab-badge-license]: https://img.shields.io/crates/l/sifli-flash-table?style=for-the-badge
+[ftab-badge-version]: https://img.shields.io/crates/v/sifli-flash-table?style=for-the-badge
+[ftab-badge-docsrs]: https://img.shields.io/docsrs/sifli-flash-table?style=for-the-badge
+
 ## Let's GO!
 
 [Introduction to Embedded Rust](docs/intro_to_embedded_rust.md)
 
 [Get Started](docs/get_started.md)
+
+[sifli-hal](sifli-hal/README.md)
+
+[examples](examples)
 
 [Flash and Debug Guide](docs/flash_and_debug.md)
 

@@ -28,6 +28,28 @@ sftool -c SF32LB52 -p COM7 write_flash write_flash bootloader.bin@0x12010000 app
 
 See [OpenSiFli/sftool](https://github.com/OpenSiFli/sftool) for details.
 
+After flashing `ftab.bin` and `bootloader.bin`, you can choose to flash only the application (but be aware that the size of your application's bin must be smaller than the size recorded in `ftab.bin`). In `examples/sf32lb52x/.cargo/config.toml`, you need to set the `runner` to sftool:
+
+```bash
+runner = 'sftool -c SF32LB52 -p <Your_Port> --compat write_flash'
+```
+
+Then, you can use the `cargo run` command to flash as usual:
+
+```shell
+$ cargo run --bin blinky
+
+    ...
+    ...
+    Finished `release` profile [optimized] target(s) in 0.16s
+     Running `sftool -c SF32LB52 --port /dev/cu.xxxxxx --compat write_flash target/thumbv8m.main-none-eabi/release/blinky`
+[0x00]   Connected success!
+[0x01]   Download stub success!
+[0x02]   Need to re-download
+[0x03] Download at Download success!... ===================================================================================================== 15.16 KiB/s 100.000%
+[0x04]   Verify success!
+```
+
 ### SiFliUartDownload (Windows Only)
 
 First, install [cargo-binutils](https://github.com/rust-embedded/cargo-binutils):
@@ -53,27 +75,27 @@ Afterward, use the same programming method as with the SDK (for example, running
 
 ### probe-rs (Available on Linux, Mac and Windows)
 
-In [probe-rs #3150](https://github.com/probe-rs/probe-rs/pull/3150), the SiFliUart debug interface has been merged. Before the next release of probe-rs, you may need to install from the master branch source:
+In the latest version of [probe-rs](https://github.com/probe-rs/probe-rs) (v0.28.0), the SiFliUart debug interface has been merged. You need to install the latest version of probe-rs:
 
 ```bash
-cargo install probe-rs-tools --git https://github.com/probe-rs/probe-rs --branch master --force
+cargo install probe-rs-tools --force
 ```
 
 To have `probe-rs` recognize your serial port as the debug port for `sf32`, follow one of these methods:
 
 Method 1: Modify the `production string` of your CH343 to include the keyword `SiFli` (case-insensitive).
 
-Method 2: Set the environment variable `SIFLI_UART_DEBUG`, then restart the software or your computer for the changes to take effect. With this method, probe-rs will recognize all serial ports as SiFliUart debug interfaces.
+Method 2: Set the environment variable `SIFLI_UART_DEBUG=1`, then restart the software or your computer for the changes to take effect. With this method, probe-rs will recognize all serial ports as SiFliUart debug interfaces.
 
 **Currently, probe-rs cannot flash programs (can't use `run` or `download`), only `attach` can be used.**
 
 ```bash
-probe-rs attach --chip SF32LB52 target\thumbv8m.main-none-eabi\debug\blinky
+SIFLI_UART_DEBUG=1 probe-rs attach --chip SF32LB52 target\thumbv8m.main-none-eabi\debug\blinky
 ```
 
 Then you can see defmt rtt log output and use debugging.
 
-A reference VSCode configuration file is as follows:
+Here is a reference VSCode launch.json configuration file:
 
 ```json
 {
@@ -82,17 +104,31 @@ A reference VSCode configuration file is as follows:
         {
             "type": "probe-rs-debug",
             "request": "attach",
-            "name": "probe-rs",
-            "cwd": "${workspaceFolder}",
-            "connectUnderReset": false,
+            "name": "probe_rs attach sf32lb52",
             "chip": "SF32LB52",
+            "probe": "1a86:55d3:<Your_Port>",
             "coreConfigs": [
                 {
                     "coreIndex": 0,
-                    "svdFile": "xxx/sifli-pac/svd/SF32LB52x.svd",
-                    "programBinary": "examples/sf32lb52x/target/thumbv8m.main-none-eabi/debug/blinky"
-                }
-            ]
+                    "programBinary": "examples/sf32lb52x/target/thumbv8m.main-none-eabi/debug/blinky",
+                    "rttEnabled": true,
+                    "rttChannelFormats": [
+                      {
+                        "channelNumber": 0,
+                        "dataFormat": "String",
+                        "showTimestamps": true
+                      },
+                      {
+                        "channelNumber": 1,
+                        "dataFormat": "BinaryLE"
+                      }
+                    ]
+                },
+            ],
+            "env": {
+                "RUST_LOG": "info",
+                "SIFLI_UART_DEBUG": "1",
+            },
         }
     ]
 }
