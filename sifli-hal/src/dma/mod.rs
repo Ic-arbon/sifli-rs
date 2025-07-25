@@ -14,16 +14,9 @@ pub(crate) use util::*;
 pub(crate) mod ringbuffer;
 pub mod word;
 
-use embassy_hal_internal::{impl_peripheral, PeripheralType};
+use embassy_hal_internal::{impl_peripheral, Peripheral};
 
 use crate::interrupt;
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-enum Dir {
-    MemoryToPeripheral,
-    PeripheralToMemory,
-}
 
 pub type Request = u8;
 
@@ -38,7 +31,17 @@ pub(crate) trait ChannelInterrupt {
 
 /// DMA channel.
 #[allow(private_bounds)]
-pub trait Channel: SealedChannel + PeripheralType + Into<AnyChannel> + 'static {}
+pub trait Channel: SealedChannel + Peripheral<P = Self> + Into<AnyChannel> + 'static {
+    /// Type-erase (degrade) this pin into an `AnyChannel`.
+    ///
+    /// This converts DMA channel singletons (`DMA1_CH3`, `DMA2_CH1`, ...), which
+    /// are all different types, into the same type. It is useful for
+    /// creating arrays of channels, or avoiding generics.
+    #[inline]
+    fn degrade(self) -> AnyChannel {
+        AnyChannel { id: self.id() }
+    }
+}
 
 macro_rules! dma_channel_impl {
     ($channel_peri:ident, $index:expr) => {
@@ -74,7 +77,8 @@ impl_peripheral!(AnyChannel);
 impl AnyChannel {
     fn info(&self) -> &ChannelInfo {
         // This relies on generated code from build.rs
-        &crate::_generated::dma::DMAC_CHANNELS[self.id as usize]
+        // &crate::_generated::dmac::DMAC_CHANNELS[self.id as usize]
+        todo!("Implement `info` method for AnyChannel");
     }
 }
 

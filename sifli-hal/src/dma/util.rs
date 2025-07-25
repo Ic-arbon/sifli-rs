@@ -4,13 +4,13 @@
 
 use super::word::Word;
 use super::{AnyChannel, Request, Transfer, TransferOptions};
-use crate::Peri;
+use crate::PeripheralRef;
 
 /// Convenience wrapper, contains a channel and a request number.
 ///
 /// Commonly used in peripheral drivers that own DMA channels.
 pub(crate) struct ChannelAndRequest<'d> {
-    pub channel: Peri<'d, AnyChannel>,
+    pub channel: PeripheralRef<'d, AnyChannel>,
     pub request: Request,
 }
 

@@ -2,8 +2,6 @@
 // https://github.com/embassy-rs/embassy/tree/main/embassy-stm32
 // Special thanks to the Embassy Project and its contributors for their work!
 
-#![cfg_attr(gpdma, allow(unused))]
-
 use core::future::poll_fn;
 use core::task::{Poll, Waker};
 
