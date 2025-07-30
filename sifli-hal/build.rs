@@ -93,6 +93,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let adc_path = data_dir.join("adc.yaml");
     let adc_content = fs::read_to_string(&adc_path)?;
     let adc: build_serde::Adc = serde_yaml::from_str(&adc_content)?;
+
+    // Read and parse dma.yaml
+    let dma_path = data_dir.join("dma.yaml");
+    let dma_content = fs::read_to_string(&dma_path)?;
+    let dma: build_serde::Dma = serde_yaml::from_str(&dma_content)
+        .map_err(|e| format!("Failed to parse dma.yaml: {}", e))?;
     
     // Get output path from env
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
@@ -111,12 +117,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     token_stream.extend(interrupt_mod);
 
     // Generate peripherals singleton
-    let peripherals_singleton = generate_peripherals_singleton(&peripherals);
+    let peripherals_singleton = generate_peripherals_singleton(&peripherals, &dma.hcpu);
     token_stream.extend(peripherals_singleton);
 
-    // Generate implementations
-    let implementations = generate_rcc_impl(&peripherals, &fieldsets);
-    token_stream.extend(implementations);
+    // Generate rcc implementations
+    let rcc_impls = generate_rcc_impls(&peripherals, &fieldsets);
+    token_stream.extend(rcc_impls);
 
     // Generate pin implementations
     let pin_impls = generate_pin_impls(&pinmux, &pinmux_signals, &cfg_ir.fieldsets);
@@ -126,6 +132,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let adc_impls = generate_adc_impls(&adc);
     token_stream.extend(adc_impls);
 
+    // Generate DMA implementations
+    let dma_impls = generate_dma_impls(&dma);
+    token_stream.extend(dma_impls);
+
     // Write to file
     let mut file = File::create(&dest_path).unwrap();
     write!(file, "{}", token_stream).unwrap();
@@ -133,7 +143,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn generate_rcc_impl(peripherals: &Peripherals, fieldsets: &BTreeMap<String, FieldSet>) -> TokenStream {
+fn generate_rcc_impls(peripherals: &Peripherals, fieldsets: &BTreeMap<String, FieldSet>) -> TokenStream {
     let mut implementations = TokenStream::new();
     
     // Get RCC register fieldsets
@@ -248,7 +258,7 @@ fn generate_interrupt_mod(interrupts: &Interrupts) -> TokenStream {
     }
 }
 
-fn generate_peripherals_singleton(peripherals: &Peripherals) -> TokenStream {
+fn generate_peripherals_singleton(peripherals: &Peripherals, dma: &build_serde::DmaHcpu) -> TokenStream {
     let peripheral_names: Vec<_> = peripherals.hcpu
         .iter()
         .map(|p| {
@@ -265,12 +275,14 @@ fn generate_peripherals_singleton(peripherals: &Peripherals) -> TokenStream {
         })
         .collect();
     
-    let dmac_channels: Vec<_> = (1..=8)
-        .map(|i| {
-            let channel_name = format!("DMAC_CH{}", i);
+    // Iterate over all DMA controllers (e.g., DMAC1, DMAC2) found in the yaml.
+    let dmac_channels: Vec<_> = dma.controllers.iter().flat_map(|(name, controller)| {
+        (1..=controller.channel_total).map(move |i| {
+            // Generate singletons like `DMAC1_CH1`, `DMAC1_CH2`...
+            let channel_name = format!("{}_CH{}", name, i);
             quote::format_ident!("{}", channel_name)
         })
-        .collect();
+    }).collect();
     
     quote! {
         embassy_hal_internal::peripherals! {
@@ -294,7 +306,7 @@ fn generate_pin_impls(
         for func in &pin.functions {
             // Try to match function against pinmux_signals
             if let Some(signal_def) = find_matching_signal(&func.function, &pinmux_signals.hcpu) {
-                generate_signal_impl(
+                generate_signal_impls(
                     &mut implementations,
                     signal_def,
                     &pin_name,
@@ -309,7 +321,7 @@ fn generate_pin_impls(
     implementations
 }
 
-fn generate_signal_impl(
+fn generate_signal_impls(
     implementations: &mut TokenStream,
     signal_def: &build_serde::SignalDefinition,
     pin_name: &str,
@@ -321,7 +333,7 @@ fn generate_signal_impl(
     
     match &signal_def.r#type {
         build_serde::SignalType::Gpio => {
-            generate_signal_gpio_impl(implementations, pin_name, &pin_ident);
+            generate_signal_gpio_impls(implementations, pin_name, &pin_ident);
         },
         build_serde::SignalType::Superimposed => {
             // For superimposed type, process each sub-signal
@@ -329,7 +341,7 @@ fn generate_signal_impl(
                 // Find the corresponding signal definition
                 if let Some(sub_signal) = find_matching_signal(&signal_name, &pinmux_signals.hcpu){
                     // Recursively process the sub-signal
-                    generate_signal_impl(
+                    generate_signal_impls(
                         implementations,
                         sub_signal,
                         pin_name,
@@ -341,7 +353,7 @@ fn generate_signal_impl(
             }
         },
         build_serde::SignalType::PeripheralMux => {
-            generate_signal_peripheral_mux_impl(
+            generate_signal_peripheral_mux_impls(
                 implementations,
                 signal_def,
                 &pin_ident,
@@ -350,7 +362,7 @@ fn generate_signal_impl(
             );
         },
         build_serde::SignalType::PeripheralNomux => {
-            generate_signal_peripheral_nomux_impl(
+            generate_signal_peripheral_nomux_impls(
                 implementations,
                 signal_def,
                 &pin_ident,
@@ -360,7 +372,7 @@ fn generate_signal_impl(
     }
 }
 
-fn generate_signal_gpio_impl(
+fn generate_signal_gpio_impls(
     implementations: &mut TokenStream,
     pin_name: &str,
     pin_ident: &proc_macro2::Ident,
@@ -372,7 +384,7 @@ fn generate_signal_gpio_impl(
     });
 }
 
-fn generate_signal_peripheral_mux_impl(
+fn generate_signal_peripheral_mux_impls(
     implementations: &mut TokenStream,
     signal_def: &build_serde::SignalDefinition,
     pin_ident: &proc_macro2::Ident,
@@ -430,7 +442,7 @@ fn generate_signal_peripheral_mux_impl(
     }
 }
 
-fn generate_signal_peripheral_nomux_impl(
+fn generate_signal_peripheral_nomux_impls(
     implementations: &mut TokenStream,
     signal_def: &build_serde::SignalDefinition,
     pin_ident: &proc_macro2::Ident,
@@ -470,6 +482,145 @@ fn find_matching_signal<'a>(
     }
     None
 }
+
+fn generate_adc_impls(adc: &build_serde::Adc) -> TokenStream {
+    let mut implementations = TokenStream::new();
+
+    for adc_peri in &adc.hcpu {
+        let vbat_channel_id = adc_peri.vbat_channel_id;
+        let first_channel_pin = adc_peri.first_channel_pin;
+        let vol_offset = adc_peri.vol_offset;
+        let vol_ratio = adc_peri.vol_ratio;
+
+        implementations.extend(quote! {
+            pub const VBAT_CHANNEL_ID: u8 = #vbat_channel_id;
+            pub const FIRST_CHANNEL_PIN: u8 = #first_channel_pin;
+            pub const VOL_OFFSET: u16 = #vol_offset;
+            pub const VOL_RATIO: u16 = #vol_ratio;
+        });
+
+        for pin_name_str in &adc_peri.pins {
+            let pin_ident = format_ident!("{}", pin_name_str);
+            implementations.extend(quote! {
+                impl crate::adc::AdcPin for peripherals::#pin_ident {}
+            });
+        }
+    }
+
+    implementations
+}
+
+/// Generates DMA `Request` enum and trait implementations.
+fn generate_dma_impls(dma: &build_serde::Dma) -> TokenStream {
+    let mut implementations = TokenStream::new();
+    let dma_hcpu = &dma.hcpu;
+
+    // 1. Generate the `Request` enum from all dma requests across all controllers.
+    let enum_variants = dma_hcpu.controllers.values().flat_map(|controller| &controller.request).map(|req| {
+        let name = format_ident!("{}", to_pascal_case(&req.name));
+        let id = req.id;
+        quote! {
+            #name = #id,
+        }
+    });
+
+    implementations.extend(quote! {
+        /// DMA request sources.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum Request {
+            #(#enum_variants)*
+        }
+    });
+
+    // 2. Generate `dma_trait_impl!` calls for requests where `used` is true.
+    let trait_impls = dma_hcpu.controllers.iter().flat_map(|(dmac_name, controller)| {
+        controller.request.iter()
+            .filter(|r| r.used)
+            .map(move |req| {
+                let (peripheral_str, signal_str) = req.name.split_once('_').unwrap_or((&req.name, ""));
+
+                // Prefer explicit module name from yaml, otherwise infer from peripheral name.
+                let module_name = req.module.as_ref()
+                    .map(|m| m.clone())
+                    .unwrap_or_else(|| {
+                        // Remove trailing digits (e.g., "UART1" -> "UART")
+                        peripheral_str.trim_end_matches(|c: char| c.is_ascii_digit()).to_string()
+                    });
+                
+                let module_ident = format_ident!("{}", module_name);
+                
+                let peripheral_ident = format_ident!("{}", peripheral_str.to_uppercase());
+
+                let trait_ident = if signal_str.is_empty() {
+                    format_ident!("Dma")
+                } else {
+                    format_ident!("{}Dma", to_pascal_case(signal_str))
+                };
+
+                // TODO: This is still a placeholder. The mapping from a request
+                // to a specific DMA channel needs to be defined in `dma.yaml`.
+                let channel_ident = format_ident!("{}_CH6", dmac_name);
+
+                let request_variant = format_ident!("{}", to_pascal_case(&req.name));
+
+                quote! {
+                    dma_trait_impl!(crate::#module_ident::#trait_ident, #peripheral_ident, #channel_ident, Request::#request_variant);
+                }
+            })
+    });
+
+    implementations.extend(quote! {
+        #(#trait_impls)*
+    });
+
+    // 3. Generate channel constant, implementations and interrupts
+    if let Some(dmac1) = dma_hcpu.controllers.get("DMAC1") {
+        let channel_count = dmac1.channel_total as usize;
+        implementations.extend(quote! {
+            /// The number of channels in the DMAC1 controller.
+            pub const CHANNEL_COUNT: usize = #channel_count;
+        });
+    } else {
+        // We only consider DMAC1 for now
+        panic!("DMAC1 controller not found in dma.yaml");
+    }
+
+    for (dmac_name, controller) in &dma_hcpu.controllers {
+        for i in 1..=controller.channel_total {
+            let channel_index = i - 1;
+            let channel_name_str = format!("{}_CH{}", dmac_name, i);
+            let channel_ident = format_ident!("{}", channel_name_str);
+
+            implementations.extend(quote! {
+                dma_channel_impl!(#channel_ident, #channel_index);
+
+                #[cfg(feature = "rt")]
+                #[crate::interrupt]
+                unsafe fn #channel_ident() {
+                    <crate::peripherals::#channel_ident as crate::dma::ChannelInterrupt>::on_irq();
+                }
+            });
+        }
+    }
+
+    implementations
+}
+
+/// Converts a string like "foo_bar" or "foo" to "FooBar" or "Foo".
+fn to_pascal_case(s: &str) -> String {
+    s.split('_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<String>()
+}
+
 enum GetOneError {
     None,
     Multiple,
@@ -509,31 +660,4 @@ fn rustfmt(path: impl AsRef<Path>) {
             }
         }
     }
-}
-
-fn generate_adc_impls(adc: &build_serde::Adc) -> TokenStream {
-    let mut implementations = TokenStream::new();
-
-    for adc_peri in &adc.hcpu {
-        let vbat_channel_id = adc_peri.vbat_channel_id;
-        let first_channel_pin = adc_peri.first_channel_pin;
-        let vol_offset = adc_peri.vol_offset;
-        let vol_ratio = adc_peri.vol_ratio;
-
-        implementations.extend(quote! {
-            pub const VBAT_CHANNEL_ID: u8 = #vbat_channel_id;
-            pub const FIRST_CHANNEL_PIN: u8 = #first_channel_pin;
-            pub const VOL_OFFSET: u16 = #vol_offset;
-            pub const VOL_RATIO: u16 = #vol_ratio;
-        });
-
-        for pin_name_str in &adc_peri.pins {
-            let pin_ident = format_ident!("{}", pin_name_str);
-            implementations.extend(quote! {
-                impl crate::adc::AdcPin for peripherals::#pin_ident {}
-            });
-        }
-    }
-
-    implementations
 }

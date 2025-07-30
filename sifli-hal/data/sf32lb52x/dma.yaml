@@ -1,0 +1,164 @@
+hcpu:
+  DMAC1:
+    channel_total: 8
+    request:
+      - name: mpi1
+        id: 0
+        used: false
+      - name: mpi2
+        id: 1
+        used: false
+      - name: i2c4
+        id: 3
+        used: false
+      - name: usart1_tx
+        id: 4
+      - name: usart1_rx
+        id: 5
+      - name: usart2_tx
+        id: 6
+      - name: usart2_rx
+        id: 7
+        used: false
+      - name: gptim1_update
+        id: 8
+        used: false
+      - name: gptim1_trigger
+        id: 9
+        used: false
+      - name: gptim1_cc1
+        id: 10
+        used: false
+      - name: gptim1_cc2
+        id: 11
+        used: false
+      - name: gptim1_cc3
+        id: 12
+        used: false
+      - name: gptim1_cc4
+        id: 13
+        used: false
+      - name: btim1
+        id: 14
+        used: false
+      - name: btim2
+        id: 15
+        used: false
+      - name: atim1_update
+        id: 16
+        used: false
+      - name: atim1_trigger
+        id: 17
+        used: false
+      - name: atim1_cc1
+        id: 18
+        used: false
+      - name: atim1_cc2
+        id: 19
+        used: false
+      - name: atim1_cc3
+        id: 20
+        used: false
+      - name: atim1_cc4
+        id: 21
+        used: false
+      - name: i2c1
+        id: 22
+        used: false
+      - name: i2c2
+        id: 23
+        used: false
+      - name: i2c3
+        id: 24
+        used: false
+      - name: atim1_com
+        id: 25
+        used: false
+      - name: usart3_tx
+        id: 26
+      - name: usart3_rx
+        id: 27
+      - name: spi1_tx
+        id: 28
+        used: false
+      - name: spi1_rx
+        id: 29
+        used: false
+      - name: spi2_tx
+        id: 30
+        used: false
+      - name: spi2_rx
+        id: 31
+        used: false
+      - name: i2s1_tx
+        id: 32
+        used: false
+      - name: i2s1_rx
+        id: 33
+        used: false
+      - name: pdm1_l
+        id: 36
+        used: false
+      - name: pdm1_r
+        id: 37
+        used: false
+      - name: gpadc
+        id: 38
+        module: adc
+      - name: audadc_ch0
+        id: 39
+        used: false
+      - name: audadc_ch1
+        id: 40
+        used: false
+      - name: auddac_ch0
+        id: 41
+        used: false
+      - name: auddac_ch1
+        id: 42
+        used: false
+      - name: gptim2_update
+        id: 43
+        used: false
+      - name: gptim2_trigger
+        id: 44
+        used: false
+      - name: gptim2_cc1
+        id: 45
+        used: false
+      - name: audprc_tx_out_ch1
+        id: 46
+        used: false
+      - name: audprc_tx_out_ch0
+        id: 47
+        used: false
+      - name: audprc_tx_ch3
+        id: 48
+        used: false
+      - name: audprc_tx_ch2
+        id: 49
+        used: false
+      - name: audprc_tx_ch1
+        id: 50
+        used: false
+      - name: audprc_tx_ch0
+        id: 51
+        used: false
+      - name: audprc_rx_ch1
+        id: 52
+        used: false
+      - name: audprc_rx_ch0
+        id: 53
+        used: false
+      - name: gptim2_cc2
+        id: 54
+        used: false
+      - name: gptim2_cc3
+        id: 55
+        used: false
+      - name: gptim2_cc4
+        id: 56
+        used: false
+      - name: sdmmc1
+        id: 57
+        used: false

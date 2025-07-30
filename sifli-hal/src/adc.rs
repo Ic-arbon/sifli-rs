@@ -354,3 +354,7 @@ impl<'d> Adc<'d, Async> {
         Ok(Sample(result & 0xfff))
     }
 }
+
+pub trait Instance {}
+impl Instance for peripherals::GPADC {}
+dma_trait!(Dma, Instance);

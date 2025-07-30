@@ -1806,6 +1806,7 @@ macro_rules! impl_usart {
     };
 }
 
+// TODO: move to _generated.rs
 impl_usart!(USART1, USART1, Kind::Uart);
 impl_usart!(USART2, USART2, Kind::Uart);
 impl_usart!(USART3, USART3, Kind::Uart);

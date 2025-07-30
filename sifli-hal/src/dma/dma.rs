@@ -118,7 +118,7 @@ impl AnyChannel {
 
     unsafe fn configure(
         &self,
-        _request: Request,
+        request: Request,
         dir: Dir,
         peri_addr: *const u32,
         mem_addr: *mut u32,
@@ -160,9 +160,10 @@ impl AnyChannel {
         assert!(ndtr > 0 && ndtr <= 0xFFFF);
 
         
-        r.cpar(channel_num).write_value(pac::dmac::regs::Cpar(peri_addr as u32));
-        r.cm0ar(channel_num).write_value(pac::dmac::regs::Cm0ar(mem_addr as u32));
+        r.cpar(channel_num).write_value(pac::dmac::regs::Cpar(peri_addr as _));
+        r.cm0ar(channel_num).write_value(pac::dmac::regs::Cm0ar(mem_addr as _));
         r.cndtr(channel_num).write_value(pac::dmac::regs::Cndtr(ndtr as _));
+        r.cselr(channel_num).write_value(pac::dmac::regs::Cselr(request as _));
         r.ccr(channel_num).write(|w| {
             w.set_dir(dir.into());
             w.set_msize(mem_size.into());
@@ -350,7 +351,7 @@ impl<'a> Transfer<'a> {
 
     unsafe fn new_inner(
         channel: PeripheralRef<'a, AnyChannel>,
-        _request: Request,
+        request: Request,
         dir: Dir,
         peri_addr: *const u32,
         mem_addr: *mut u32,
@@ -363,7 +364,7 @@ impl<'a> Transfer<'a> {
         assert!(mem_len > 0 && mem_len <= 0xFFFF);
 
         channel.configure(
-            _request, dir, peri_addr, mem_addr, mem_len, incr_mem, mem_size, peri_size, options,
+            request, dir, peri_addr, mem_addr, mem_len, incr_mem, mem_size, peri_size, options,
         );
         channel.start();
         Self { channel }
@@ -465,7 +466,7 @@ impl<'a, W: Word> ReadableRingBuffer<'a, W> {
     /// Create a new ring buffer.
     pub unsafe fn new(
         channel: impl Peripheral<P = impl Channel> + 'a,
-        _request: Request,
+        request: Request,
         peri_addr: *mut W,
         buffer: &'a mut [W],
         mut options: TransferOptions,
@@ -483,7 +484,7 @@ impl<'a, W: Word> ReadableRingBuffer<'a, W> {
         options.circular = true;
 
         channel.configure(
-            _request,
+            request,
             dir,
             peri_addr as *mut u32,
             buffer_ptr as *mut u32,
@@ -618,7 +619,7 @@ impl<'a, W: Word> WritableRingBuffer<'a, W> {
     /// Create a new ring buffer.
     pub unsafe fn new(
         channel: impl Peripheral<P = impl Channel> + 'a,
-        _request: Request,
+        request: Request,
         peri_addr: *mut W,
         buffer: &'a mut [W],
         mut options: TransferOptions,
@@ -636,7 +637,7 @@ impl<'a, W: Word> WritableRingBuffer<'a, W> {
         options.circular = true;
 
         channel.configure(
-            _request,
+            request,
             dir,
             peri_addr as *mut u32,
             buffer_ptr as *mut u32,

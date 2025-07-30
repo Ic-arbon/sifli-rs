@@ -6,6 +6,8 @@
 #![macro_use]
 
 mod dma;
+use core::marker::PhantomData;
+
 pub use dma::*;
 
 mod util;
@@ -17,16 +19,10 @@ pub mod word;
 use embassy_hal_internal::{impl_peripheral, Peripheral};
 
 use crate::interrupt;
-
 pub type Request = u8;
 
 pub(crate) trait SealedChannel {
     fn id(&self) -> u8;
-}
-
-pub(crate) trait ChannelInterrupt {
-    #[cfg_attr(not(feature = "rt"), allow(unused))]
-    unsafe fn on_irq();
 }
 
 /// DMA channel.
@@ -41,31 +37,18 @@ pub trait Channel: SealedChannel + Peripheral<P = Self> + Into<AnyChannel> + 'st
     fn degrade(self) -> AnyChannel {
         AnyChannel { id: self.id() }
     }
+
+    type Interrupt: interrupt::typelevel::Interrupt;
 }
 
-macro_rules! dma_channel_impl {
-    ($channel_peri:ident, $index:expr) => {
-        impl crate::dma::SealedChannel for crate::peripherals::$channel_peri {
-            fn id(&self) -> u8 {
-                $index
-            }
-        }
-        impl crate::dma::ChannelInterrupt for crate::peripherals::$channel_peri {
-            unsafe fn on_irq() {
-                crate::dma::AnyChannel { id: $index }.on_irq();
-            }
-        }
+pub struct InterruptHandler<T: Channel> {
+    _phantom: PhantomData<T>,
+}
 
-        impl crate::dma::Channel for crate::peripherals::$channel_peri {}
-
-        impl From<crate::peripherals::$channel_peri> for crate::dma::AnyChannel {
-            fn from(val: crate::peripherals::$channel_peri) -> Self {
-                Self {
-                    id: crate::dma::SealedChannel::id(&val),
-                }
-            }
-        }
-    };
+impl<T: Channel> interrupt::typelevel::Handler<T::Interrupt> for InterruptHandler<T> {
+    unsafe fn on_interrupt() {
+        T::degrade(T).on_irq();
+    }
 }
 
 /// Type-erased DMA channel.
@@ -87,7 +70,8 @@ impl SealedChannel for AnyChannel {
         self.id
     }
 }
-impl Channel for AnyChannel {}
+// TODO
+// impl Channel for AnyChannel {}
 
 const CHANNEL_COUNT: usize = 8; // Assuming 8 channels for DMAC1
 static STATE: [dma::ChannelState; CHANNEL_COUNT] = [dma::ChannelState::NEW; CHANNEL_COUNT];
@@ -95,12 +79,3 @@ static STATE: [dma::ChannelState; CHANNEL_COUNT] = [dma::ChannelState::NEW; CHAN
 pub(crate) unsafe fn init(cs: critical_section::CriticalSection, dma_priority: interrupt::Priority) {
     dma::init(cs, dma_priority);
 }
-
-dma_channel_impl!(DMAC_CH1, 0);
-dma_channel_impl!(DMAC_CH2, 1);
-dma_channel_impl!(DMAC_CH3, 2);
-dma_channel_impl!(DMAC_CH4, 3);
-dma_channel_impl!(DMAC_CH5, 4);
-dma_channel_impl!(DMAC_CH6, 5);
-dma_channel_impl!(DMAC_CH7, 6);
-dma_channel_impl!(DMAC_CH8, 7);
