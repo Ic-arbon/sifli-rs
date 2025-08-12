@@ -17,6 +17,7 @@ pub mod pmu;
 pub mod usart;
 pub mod adc;
 pub mod lcdc;
+pub mod dma;
 #[cfg(feature = "_time-driver")]
 pub mod time_driver;
 
@@ -93,8 +94,10 @@ pub fn init(config: Config) -> Peripherals {
         time_driver::init();
         
         gpio::init(config.gpio1_it_priority);
-
-        // dma::init();
+        critical_section::with(|cs| {
+            dma::init(cs);
+        });
+        
     }
     p
 }

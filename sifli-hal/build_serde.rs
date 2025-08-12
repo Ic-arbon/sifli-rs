@@ -76,6 +76,34 @@ pub struct AdcPeripheral {
     pub pins: Vec<String>,
 }
 
+// ---------- dma.yaml ----------
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Dma {
+    pub hcpu: DmaHcpu,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DmaHcpu {
+    #[serde(flatten)]
+    pub controllers: BTreeMap<String, DmaController>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DmaController {
+    pub channel_total: u8,
+    pub request: Vec<DmaRequest>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DmaRequest {
+    pub name: String,
+    pub id: u8,
+    pub module: Option<String>,
+    #[serde(default = "default_true")]
+    pub used: bool,
+}
+
 // ---------- HPSYS_xxx.yaml ----------
 
 // Some code in this file is copied from [chiptool](https://github.com/embassy-rs/chiptool/blob/main/src/ir.rs)

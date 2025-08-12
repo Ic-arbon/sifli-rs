@@ -6,21 +6,21 @@
 // https://github.com/embassy-rs/embassy/tree/main/embassy-stm32
 // Special thanks to the Embassy Project and its contributors for their work!
 
-// use core::future::poll_fn;
+use core::future::poll_fn;
 use core::marker::PhantomData;
 use core::sync::atomic::{compiler_fence, AtomicU8, Ordering};
-// use core::task::Poll;
+use core::task::Poll;
 
 use embassy_embedded_hal::SetConfig;
-// use embassy_hal_internal::drop::OnDrop;
+use embassy_hal_internal::drop::OnDrop;
 use embassy_hal_internal::PeripheralRef;
 use embassy_sync::waitqueue::AtomicWaker;
-// use futures_util::future::{select, Either};
+use futures_util::future::{select, Either};
 
-// use crate::dma::ChannelAndRequest;
+use crate::dma::ChannelAndRequest;
 use crate::gpio::{AfType, AnyPin, Pull, SealedPin};
 use crate::interrupt::{self, Interrupt, typelevel::Interrupt as _};
-use crate::mode::{/*Async, */ Blocking, Mode};
+use crate::mode::{Async, Blocking, Mode};
 use crate::time::Hertz;
 use crate::{rcc, Peripheral};
 
@@ -252,12 +252,12 @@ pub enum Error {
     BufferTooLong,
 }
 
-// enum ReadCompletionEvent {
-//     // DMA Read transfer completed first
-//     DmaCompleted,
-//     // Idle line detected first
-//     Idle(usize),
-// }
+enum ReadCompletionEvent {
+    // DMA Read transfer completed first
+    DmaCompleted,
+    // Idle line detected first
+    Idle(usize),
+}
 
 /// Bidirectional UART Driver, which acts as a combination of [`UartTx`] and [`UartRx`].
 ///
@@ -291,7 +291,7 @@ pub struct UartTx<'d, T: Instance, M: Mode> {
     kernel_clock: Hertz,
     tx: Option<PeripheralRef<'d, AnyPin>>,
     cts: Option<PeripheralRef<'d, AnyPin>>,
-    // tx_dma: Option<ChannelAndRequest<'d>>,
+    tx_dma: Option<ChannelAndRequest<'d>>,
     duplex: Duplex,
     _phantom: PhantomData<(T, M)>,
 }
@@ -339,7 +339,7 @@ pub struct UartRx<'d, T: Instance, M: Mode> {
     kernel_clock: Hertz,
     rx: Option<PeripheralRef<'d, AnyPin>>,
     rts: Option<PeripheralRef<'d, AnyPin>>,
-    // rx_dma: Option<ChannelAndRequest<'d>>,
+    rx_dma: Option<ChannelAndRequest<'d>>,
     _detect_previous_overrun: bool,
     _phantom: PhantomData<(T, M)>,
 }
@@ -353,62 +353,62 @@ impl<'d, T: Instance, M: Mode> SetConfig for UartRx<'d, T, M> {
     }
 }
 
-// impl<'d, T: Instance> UartTx<'d, T, Async> {
-//     /// Useful if you only want Uart Tx. It saves 1 pin and consumes a little less power.
-//     pub fn new<T: Instance>(
-//         peri: impl Peripheral<P = T> + 'd,
-//         tx: impl Peripheral<P = impl TxdPin<T>> + 'd,
-//         tx_dma: impl Peripheral<P = impl TxDma<T>> + 'd,
-//         config: Config,
-//     ) -> Result<Self, ConfigError> {
-//         Self::new_inner(
-//             peri,
-//             new_pin!(tx, AfType::new(OutputType::PushPull, Speed::Medium)),
-//             None,
-//             new_dma!(tx_dma),
-//             config,
-//         )
-//     }
+impl<'d, T: Instance> UartTx<'d, T, Async> {
+    /// Useful if you only want Uart Tx. It saves 1 pin and consumes a little less power.
+    pub fn new(
+        peri: impl Peripheral<P = T> + 'd,
+        tx: impl Peripheral<P = impl TxdPin<T>> + 'd,
+        tx_dma: impl Peripheral<P = impl TxDma<T>> + 'd,
+        config: Config,
+    ) -> Result<Self, ConfigError> {
+        Self::new_inner(
+            peri,
+            new_pin!(tx, AfType::new(Pull::Up)),
+            None,
+            new_dma!(tx_dma),
+            config,
+        )
+    }
 
-//     /// Create a new tx-only UART with a clear-to-send pin
-//     pub fn new_with_cts<T: Instance>(
-//         peri: impl Peripheral<P = T> + 'd,
-//         tx: impl Peripheral<P = impl TxdPin<T>> + 'd,
-//         cts: impl Peripheral<P = impl CtsPin<T>> + 'd,
-//         // tx_dma: impl Peripheral<P = impl TxDma<T>> + 'd,
-//         config: Config,
-//     ) -> Result<Self, ConfigError> {
-//         Self::new_inner(
-//             peri,
-//             new_pin!(tx, AfType::new(OutputType::PushPull, Speed::Medium)),
-//             new_pin!(cts, AfType::new(Pull::None)),
-//             // new_dma!(tx_dma),
-//             config,
-//         )
-//     }
+    /// Create a new tx-only UART with a clear-to-send pin
+    pub fn new_with_cts(
+        peri: impl Peripheral<P = T> + 'd,
+        tx: impl Peripheral<P = impl TxdPin<T>> + 'd,
+        cts: impl Peripheral<P = impl CtsPin<T>> + 'd,
+        tx_dma: impl Peripheral<P = impl TxDma<T>> + 'd,
+        config: Config,
+    ) -> Result<Self, ConfigError> {
+        Self::new_inner(
+            peri,
+            new_pin!(tx, AfType::new(Pull::Up)),
+            new_pin!(cts, AfType::new(Pull::None)),
+            new_dma!(tx_dma),
+            config,
+        )
+    }
 
-//     /// Initiate an asynchronous UART write
-//     pub async fn write(&mut self, buffer: &[u8]) -> Result<(), Error> {
-//         let r = T::regs();
+    /// Initiate an asynchronous UART write
+    pub async fn write(&mut self, buffer: &[u8]) -> Result<(), Error> {
+        let r = T::regs();
 
-//         half_duplex_set_rx_tx_before_write(&r, self.duplex == Duplex::Half(HalfDuplexReadback::Readback));
+        half_duplex_set_rx_tx_before_write(&r, self.duplex == Duplex::Half(HalfDuplexReadback::Readback));
 
-//         let ch = self.tx_dma.as_mut().unwrap();
-//         r.cr3().modify(|reg| {
-//             reg.set_dmat(true);
-//         });
-//         // If we don't assign future to a variable, the data register pointer
-//         // is held across an await and makes the future non-Send.
-//         let transfer = unsafe { ch.write(buffer, r.tdr(), Default::default()) };
-//         transfer.await;
-//         Ok(())
-//     }
+        let ch = self.tx_dma.as_mut().unwrap();
+        r.cr3().modify(|reg| {
+            reg.set_dmat(true);
+        });
+        // If we don't assign future to a variable, the data register pointer
+        // is held across an await and makes the future non-Send.
+        let transfer = unsafe { ch.write(buffer, r.tdr().as_ptr() as _, Default::default()) };
+        transfer.await;
+        Ok(())
+    }
 
-//     /// Wait until transmission complete
-//     pub async fn flush(&mut self) -> Result<(), Error> {
-//         flush::<T>(&self.state).await
-//     }
-// }
+    /// Wait until transmission complete
+    pub async fn flush(&mut self) -> Result<(), Error> {
+        flush::<T>(&self.state).await
+    }
+}
 
 impl<'d, T: Instance> UartTx<'d, T, Blocking> {
     /// Create a new blocking tx-only UART with no hardware flow control.
@@ -423,7 +423,7 @@ impl<'d, T: Instance> UartTx<'d, T, Blocking> {
             peri,
             new_pin!(tx, AfType::new(Pull::Up)),
             None,
-            // None,
+            None,
             config,
         )
     }
@@ -439,7 +439,7 @@ impl<'d, T: Instance> UartTx<'d, T, Blocking> {
             peri,
             new_pin!(tx, AfType::new(Pull::Up)),
             new_pin!(cts, AfType::new(config.rx_pull)),
-            // None,
+            None,
             config,
         )
     }
@@ -450,7 +450,7 @@ impl<'d, T: Instance, M: Mode> UartTx<'d, T, M> {
         _peri: impl Peripheral<P = T> + 'd,
         tx: Option<PeripheralRef<'d, AnyPin>>,
         cts: Option<PeripheralRef<'d, AnyPin>>,
-        // tx_dma: Option<ChannelAndRequest<'d>>,
+        tx_dma: Option<ChannelAndRequest<'d>>,
         config: Config,
     ) -> Result<Self, ConfigError> {
         let mut this = Self {
@@ -458,7 +458,7 @@ impl<'d, T: Instance, M: Mode> UartTx<'d, T, M> {
             kernel_clock: T::frequency().unwrap(),
             tx,
             cts,
-            // tx_dma,
+            tx_dma,
             duplex: config.duplex,
             _phantom: PhantomData,
         };
@@ -514,35 +514,35 @@ impl<'d, T: Instance, M: Mode> UartTx<'d, T, M> {
     }
 }
 
-// /// Wait until transmission complete
-// async fn flush<T: Instance>(state: &State) -> Result<(), Error> {
-//     let r = T::regs();
-//     if r.cr1().read().te() && !r.isr().read().tc() {
-//         r.cr1().modify(|w| {
-//             // enable Transmission Complete interrupt
-//             w.set_tcie(true);
-//         });
+/// Wait until transmission complete
+async fn flush<T: Instance>(state: &State) -> Result<(), Error> {
+    let r = T::regs();
+    if r.cr1().read().te() && !r.isr().read().tc() {
+        r.cr1().modify(|w| {
+            // enable Transmission Complete interrupt
+            w.set_tcie(true);
+        });
 
-//         compiler_fence(Ordering::SeqCst);
+        compiler_fence(Ordering::SeqCst);
 
-//         // future which completes when Transmission complete is detected
-//         let abort = poll_fn(move |cx| {
-//             state.rx_waker.register(cx.waker());
+        // future which completes when Transmission complete is detected
+        let abort = poll_fn(move |cx| {
+            state.rx_waker.register(cx.waker());
 
-//             let sr = r.isr().read();
-//             if sr.tc() {
-//                 // Transmission complete detected
-//                 return Poll::Ready(());
-//             }
+            let sr = r.isr().read();
+            if sr.tc() {
+                // Transmission complete detected
+                return Poll::Ready(());
+            }
 
-//             Poll::Pending
-//         });
+            Poll::Pending
+        });
 
-//         abort.await;
-//     }
+        abort.await;
+    }
 
-//     Ok(())
-// }
+    Ok(())
+}
 
 fn blocking_flush<T: Instance>() -> Result<(), Error> {
     let r = T::regs();
@@ -573,263 +573,263 @@ fn half_duplex_set_rx_tx_before_write(r: &Regs, enable_readback: bool) {
     }
 }
 
-// impl<'d, T: Instance> UartRx<'d, T, Async> {
-//     /// Create a new rx-only UART with no hardware flow control.
-//     ///
-//     /// Useful if you only want Uart Rx. It saves 1 pin and consumes a little less power.
-//     pub fn new(
-//         peri: impl Peripheral<P = T> + 'd,
-//         _irq: impl interrupt::typelevel::Binding<T::Interrupt, InterruptHandler<T>> + 'd,
-//         rx: impl Peripheral<P = impl RxdPin<T>> + 'd,
-//         rx_dma: impl Peripheral<P = impl RxDma<T>> + 'd,
-//         config: Config,
-//     ) -> Result<Self, ConfigError> {
-//         Self::new_inner(
-//             peri,
-//             new_pin!(rx, AfType::new(config.rx_pull)),
-//             None,
-//             new_dma!(rx_dma),
-//             config,
-//         )
-//     }
+impl<'d, T: Instance> UartRx<'d, T, Async> {
+    /// Create a new rx-only UART with no hardware flow control.
+    ///
+    /// Useful if you only want Uart Rx. It saves 1 pin and consumes a little less power.
+    pub fn new(
+        peri: impl Peripheral<P = T> + 'd,
+        _irq: impl interrupt::typelevel::Binding<T::Interrupt, InterruptHandler<T>> + 'd,
+        rx: impl Peripheral<P = impl RxdPin<T>> + 'd,
+        rx_dma: impl Peripheral<P = impl RxDma<T>> + 'd,
+        config: Config,
+    ) -> Result<Self, ConfigError> {
+        Self::new_inner(
+            peri,
+            new_pin!(rx, AfType::new(config.rx_pull)),
+            None,
+            new_dma!(rx_dma),
+            config,
+        )
+    }
 
-//     /// Create a new rx-only UART with a request-to-send pin
-//     pub fn new_with_rts(
-//         peri: impl Peripheral<P = T> + 'd,
-//         _irq: impl interrupt::typelevel::Binding<T::Interrupt, InterruptHandler<T>> + 'd,
-//         rx: impl Peripheral<P = impl RxdPin<T>> + 'd,
-//         rts: impl Peripheral<P = impl RtsPin<T>> + 'd,
-//         rx_dma: impl Peripheral<P = impl RxDma<T>> + 'd,
-//         config: Config,
-//     ) -> Result<Self, ConfigError> {
-//         Self::new_inner(
-//             peri,
-//             new_pin!(rx, AfType::new(config.rx_pull)),
-//             new_pin!(rts, AfType::new(Pull::Up)),
-//             new_dma!(rx_dma),
-//             config,
-//         )
-//     }
+    /// Create a new rx-only UART with a request-to-send pin
+    pub fn new_with_rts(
+        peri: impl Peripheral<P = T> + 'd,
+        _irq: impl interrupt::typelevel::Binding<T::Interrupt, InterruptHandler<T>> + 'd,
+        rx: impl Peripheral<P = impl RxdPin<T>> + 'd,
+        rts: impl Peripheral<P = impl RtsPin<T>> + 'd,
+        rx_dma: impl Peripheral<P = impl RxDma<T>> + 'd,
+        config: Config,
+    ) -> Result<Self, ConfigError> {
+        Self::new_inner(
+            peri,
+            new_pin!(rx, AfType::new(config.rx_pull)),
+            new_pin!(rts, AfType::new(Pull::Up)),
+            new_dma!(rx_dma),
+            config,
+        )
+    }
 
-//     /// Initiate an asynchronous UART read
-//     pub async fn read(&mut self, buffer: &mut [u8]) -> Result<(), Error> {
-//         self.inner_read(buffer, false).await?;
+    /// Initiate an asynchronous UART read
+    pub async fn read(&mut self, buffer: &mut [u8]) -> Result<(), Error> {
+        self.inner_read(buffer, false).await?;
 
-//         Ok(())
-//     }
+        Ok(())
+    }
 
-//     /// Initiate an asynchronous read with idle line detection enabled
-//     pub async fn read_until_idle(&mut self, buffer: &mut [u8]) -> Result<usize, Error> {
-//         self.inner_read(buffer, true).await
-//     }
+    /// Initiate an asynchronous read with idle line detection enabled
+    pub async fn read_until_idle(&mut self, buffer: &mut [u8]) -> Result<usize, Error> {
+        self.inner_read(buffer, true).await
+    }
 
-//     async fn inner_read_run(
-//         &mut self,
-//         buffer: &mut [u8],
-//         enable_idle_line_detection: bool,
-//     ) -> Result<ReadCompletionEvent, Error> {
-//         let r = T::regs();
+    async fn inner_read_run(
+        &mut self,
+        buffer: &mut [u8],
+        enable_idle_line_detection: bool,
+    ) -> Result<ReadCompletionEvent, Error> {
+        let r = T::regs();
 
-//         // Call flush for Half-Duplex mode if some bytes were written and flush was not called.
-//         // It prevents reading of bytes which have just been written.
-//         if r.cr3().read().hdsel() && r.cr1().read().te() {
-//             flush::<T>(&self.state).await?;
+        // Call flush for Half-Duplex mode if some bytes were written and flush was not called.
+        // It prevents reading of bytes which have just been written.
+        if r.cr3().read().hdsel() && r.cr1().read().te() {
+            flush::<T>(&self.state).await?;
 
-//             // Disable Transmitter and enable Receiver after flush
-//             r.cr1().modify(|reg| {
-//                 reg.set_re(true);
-//                 reg.set_te(false);
-//             });
-//         }
+            // Disable Transmitter and enable Receiver after flush
+            r.cr1().modify(|reg| {
+                reg.set_re(true);
+                reg.set_te(false);
+            });
+        }
 
-//         // make sure USART state is restored to neutral state when this future is dropped
-//         let on_drop = OnDrop::new(move || {
-//             // defmt::trace!("Clear all USART interrupts and DMA Read Request");
-//             // clear all interrupts and DMA Rx Request
-//             r.cr1().modify(|w| {
-//                 // disable RXNE interrupt
-//                 w.set_rxneie(false);
-//                 // disable parity interrupt
-//                 w.set_peie(false);
-//                 // disable idle line interrupt
-//                 w.set_idleie(false);
-//             });
-//             r.cr3().modify(|w| {
-//                 // disable Error Interrupt: (Frame error, Noise error, Overrun error)
-//                 w.set_eie(false);
-//                 // disable DMA Rx Request
-//                 w.set_dmar(false);
-//             });
-//         });
+        // make sure USART state is restored to neutral state when this future is dropped
+        let on_drop = OnDrop::new(move || {
+            // defmt::trace!("Clear all USART interrupts and DMA Read Request");
+            // clear all interrupts and DMA Rx Request
+            r.cr1().modify(|w| {
+                // disable RXNE interrupt
+                w.set_rxneie(false);
+                // disable parity interrupt
+                w.set_peie(false);
+                // disable idle line interrupt
+                w.set_idleie(false);
+            });
+            r.cr3().modify(|w| {
+                // disable Error Interrupt: (Frame error, Noise error, Overrun error)
+                w.set_eie(false);
+                // disable DMA Rx Request
+                w.set_dmar(false);
+            });
+        });
 
-//         let ch = self.rx_dma.as_mut().unwrap();
+        let ch = self.rx_dma.as_mut().unwrap();
 
-//         let buffer_len = buffer.len();
+        let buffer_len = buffer.len();
 
-//         // Start USART DMA
-//         // will not do anything yet because DMAR is not yet set
-//         // future which will complete when DMA Read request completes
-//         let transfer = unsafe { ch.read(r.rdr(), buffer, Default::default()) };
+        // Start USART DMA
+        // will not do anything yet because DMAR is not yet set
+        // future which will complete when DMA Read request completes
+        let transfer = unsafe { ch.read(r.rdr().as_ptr() as _, buffer, Default::default()) };
 
-//         // clear ORE flag just before enabling DMA Rx Request: can be mandatory for the second transfer
-//         if !self._detect_previous_overrun {
-//             let sr = r.isr().read();
-//             // This read also clears the error and idle interrupt flags on v1.
-//             unsafe { r.rdr().as_ptr().read_volatile().0 as u8 };
-//             clear_interrupt_flags(r, sr);
-//         }
+        // clear ORE flag just before enabling DMA Rx Request: can be mandatory for the second transfer
+        if !self._detect_previous_overrun {
+            let sr = r.isr().read();
+            // This read also clears the error and idle interrupt flags on v1.
+            unsafe { r.rdr().as_ptr().read_volatile() };
+            clear_interrupt_flags(r, sr);
+        }
 
-//         r.cr1().modify(|w| {
-//             // disable RXNE interrupt
-//             w.set_rxneie(false);
-//             // enable parity interrupt if not ParityNone
-//             w.set_peie(w.pce());
-//         });
+        r.cr1().modify(|w| {
+            // disable RXNE interrupt
+            w.set_rxneie(false);
+            // enable parity interrupt if not ParityNone
+            w.set_peie(w.pce());
+        });
 
-//         r.cr3().modify(|w| {
-//             // enable Error Interrupt: (Frame error, Noise error, Overrun error)
-//             w.set_eie(true);
-//             // enable DMA Rx Request
-//             w.set_dmar(true);
-//         });
+        r.cr3().modify(|w| {
+            // enable Error Interrupt: (Frame error, Noise error, Overrun error)
+            w.set_eie(true);
+            // enable DMA Rx Request
+            w.set_dmar(true);
+        });
 
-//         compiler_fence(Ordering::SeqCst);
+        compiler_fence(Ordering::SeqCst);
 
-//         // In case of errors already pending when reception started, interrupts may have already been raised
-//         // and lead to reception abortion (Overrun error for instance). In such a case, all interrupts
-//         // have been disabled in interrupt handler and DMA Rx Request has been disabled.
+        // In case of errors already pending when reception started, interrupts may have already been raised
+        // and lead to reception abortion (Overrun error for instance). In such a case, all interrupts
+        // have been disabled in interrupt handler and DMA Rx Request has been disabled.
 
-//         let cr3 = r.cr3().read();
+        let cr3 = r.cr3().read();
 
-//         if !cr3.dmar() {
-//             // something went wrong
-//             // because the only way to get this flag cleared is to have an interrupt
+        if !cr3.dmar() {
+            // something went wrong
+            // because the only way to get this flag cleared is to have an interrupt
 
-//             // DMA will be stopped when transfer is dropped
+            // DMA will be stopped when transfer is dropped
 
-//             let sr = r.isr().read();
-//             // This read also clears the error and idle interrupt flags on v1.
-//             unsafe { r.rdr().as_ptr().read_volatile().0 as u8 };
-//             clear_interrupt_flags(r, sr);
+            let sr = r.isr().read();
+            // This read also clears the error and idle interrupt flags on v1.
+            unsafe { r.rdr().as_ptr().read_volatile() };
+            clear_interrupt_flags(r, sr);
 
-//             if sr.pe() {
-//                 return Err(Error::Parity);
-//             }
-//             if sr.fe() {
-//                 return Err(Error::Framing);
-//             }
-//             if sr.ne() {
-//                 return Err(Error::Noise);
-//             }
-//             if sr.ore() {
-//                 return Err(Error::Overrun);
-//             }
+            if sr.pe() {
+                return Err(Error::Parity);
+            }
+            if sr.fe() {
+                return Err(Error::Framing);
+            }
+            if sr.nf() {
+                return Err(Error::Noise);
+            }
+            if sr.ore() {
+                return Err(Error::Overrun);
+            }
 
-//             unreachable!();
-//         }
+            unreachable!();
+        }
 
-//         if enable_idle_line_detection {
-//             // clear idle flag
-//             let sr = r.isr().read();
-//             // This read also clears the error and idle interrupt flags on v1.
-//             unsafe { r.rdr().as_ptr().read_volatile().0 as u8 };
-//             clear_interrupt_flags(r, sr);
+        if enable_idle_line_detection {
+            // clear idle flag
+            let sr = r.isr().read();
+            // This read also clears the error and idle interrupt flags on v1.
+            unsafe { r.rdr().as_ptr().read_volatile() };
+            clear_interrupt_flags(r, sr);
 
-//             // enable idle interrupt
-//             r.cr1().modify(|w| {
-//                 w.set_idleie(true);
-//             });
-//         }
+            // enable idle interrupt
+            r.cr1().modify(|w| {
+                w.set_idleie(true);
+            });
+        }
 
-//         compiler_fence(Ordering::SeqCst);
+        compiler_fence(Ordering::SeqCst);
 
-//         // future which completes when idle line or error is detected
-//         let s = self.state;
-//         let abort = poll_fn(move |cx| {
-//             s.rx_waker.register(cx.waker());
+        // future which completes when idle line or error is detected
+        let s = self.state;
+        let abort = poll_fn(move |cx| {
+            s.rx_waker.register(cx.waker());
 
-//             let sr = r.isr().read();
+            let sr = r.isr().read();
 
-//             // This read also clears the error and idle interrupt flags on v1.
-//             unsafe { r.rdr().as_ptr().read_volatile().0 as u8 };
-//             clear_interrupt_flags(r, sr);
+            // This read also clears the error and idle interrupt flags on v1.
+            unsafe { r.rdr().as_ptr().read_volatile() };
+            clear_interrupt_flags(r, sr);
 
-//             if enable_idle_line_detection {
-//                 // enable idle interrupt
-//                 r.cr1().modify(|w| {
-//                     w.set_idleie(true);
-//                 });
-//             }
+            if enable_idle_line_detection {
+                // enable idle interrupt
+                r.cr1().modify(|w| {
+                    w.set_idleie(true);
+                });
+            }
 
-//             compiler_fence(Ordering::SeqCst);
+            compiler_fence(Ordering::SeqCst);
 
-//             let has_errors = sr.pe() || sr.fe() || sr.ne() || sr.ore();
+            let has_errors = sr.pe() || sr.fe() || sr.nf() || sr.ore();
 
-//             if has_errors {
-//                 // all Rx interrupts and Rx DMA Request have already been cleared in interrupt handler
+            if has_errors {
+                // all Rx interrupts and Rx DMA Request have already been cleared in interrupt handler
 
-//                 if sr.pe() {
-//                     return Poll::Ready(Err(Error::Parity));
-//                 }
-//                 if sr.fe() {
-//                     return Poll::Ready(Err(Error::Framing));
-//                 }
-//                 if sr.ne() {
-//                     return Poll::Ready(Err(Error::Noise));
-//                 }
-//                 if sr.ore() {
-//                     return Poll::Ready(Err(Error::Overrun));
-//                 }
-//             }
+                if sr.pe() {
+                    return Poll::Ready(Err(Error::Parity));
+                }
+                if sr.fe() {
+                    return Poll::Ready(Err(Error::Framing));
+                }
+                if sr.nf() {
+                    return Poll::Ready(Err(Error::Noise));
+                }
+                if sr.ore() {
+                    return Poll::Ready(Err(Error::Overrun));
+                }
+            }
 
-//             if enable_idle_line_detection && sr.idle() {
-//                 // Idle line detected
-//                 return Poll::Ready(Ok(()));
-//             }
+            if enable_idle_line_detection && sr.idle() {
+                // Idle line detected
+                return Poll::Ready(Ok(()));
+            }
 
-//             Poll::Pending
-//         });
+            Poll::Pending
+        });
 
-//         // wait for the first of DMA request or idle line detected to completes
-//         // select consumes its arguments
-//         // when transfer is dropped, it will stop the DMA request
-//         let r = match select(transfer, abort).await {
-//             // DMA transfer completed first
-//             Either::Left(((), _)) => Ok(ReadCompletionEvent::DmaCompleted),
+        // wait for the first of DMA request or idle line detected to completes
+        // select consumes its arguments
+        // when transfer is dropped, it will stop the DMA request
+        let r = match select(transfer, abort).await {
+            // DMA transfer completed first
+            Either::Left(((), _)) => Ok(ReadCompletionEvent::DmaCompleted),
 
-//             // Idle line detected first
-//             Either::Right((Ok(()), transfer)) => Ok(ReadCompletionEvent::Idle(
-//                 buffer_len - transfer.get_remaining_transfers() as usize,
-//             )),
+            // Idle line detected first
+            Either::Right((Ok(()), transfer)) => Ok(ReadCompletionEvent::Idle(
+                buffer_len - transfer.get_remaining_transfers() as usize,
+            )),
 
-//             // error occurred
-//             Either::Right((Err(e), _)) => Err(e),
-//         };
+            // error occurred
+            Either::Right((Err(e), _)) => Err(e),
+        };
 
-//         drop(on_drop);
+        drop(on_drop);
 
-//         r
-//     }
+        r
+    }
 
-//     async fn inner_read(&mut self, buffer: &mut [u8], enable_idle_line_detection: bool) -> Result<usize, Error> {
-//         if buffer.is_empty() {
-//             return Ok(0);
-//         } else if buffer.len() > 0xFFFF {
-//             return Err(Error::BufferTooLong);
-//         }
+    async fn inner_read(&mut self, buffer: &mut [u8], enable_idle_line_detection: bool) -> Result<usize, Error> {
+        if buffer.is_empty() {
+            return Ok(0);
+        } else if buffer.len() > 0xFFFF {
+            return Err(Error::BufferTooLong);
+        }
 
-//         let buffer_len = buffer.len();
+        let buffer_len = buffer.len();
 
-//         // wait for DMA to complete or IDLE line detection if requested
-//         let res = self.inner_read_run(buffer, enable_idle_line_detection).await;
+        // wait for DMA to complete or IDLE line detection if requested
+        let res = self.inner_read_run(buffer, enable_idle_line_detection).await;
 
-//         match res {
-//             Ok(ReadCompletionEvent::DmaCompleted) => Ok(buffer_len),
-//             Ok(ReadCompletionEvent::Idle(n)) => Ok(n),
-//             Err(e) => Err(e),
-//         }
-//     }
-// }
+        match res {
+            Ok(ReadCompletionEvent::DmaCompleted) => Ok(buffer_len),
+            Ok(ReadCompletionEvent::Idle(n)) => Ok(n),
+            Err(e) => Err(e),
+        }
+    }
+}
 
 impl<'d, T: Instance> UartRx<'d, T, Blocking> {
     /// Create a new rx-only UART with no hardware flow control.
@@ -843,7 +843,7 @@ impl<'d, T: Instance> UartRx<'d, T, Blocking> {
         Self::new_inner(peri,
             new_pin!(rx, AfType::new(config.rx_pull)),
             None,
-            // None,
+            None,
             config
         )
     }
@@ -859,7 +859,7 @@ impl<'d, T: Instance> UartRx<'d, T, Blocking> {
             peri,
             new_pin!(rx, AfType::new(config.rx_pull)),
             new_pin!(rts, AfType::new(Pull::Up)),
-            // None,
+            None,
             config,
         )
     }
@@ -870,7 +870,7 @@ impl<'d, T: Instance, M: Mode> UartRx<'d, T, M> {
         _peri: impl Peripheral<P = T> + 'd,
         rx: Option<PeripheralRef<'d, AnyPin>>,
         rts: Option<PeripheralRef<'d, AnyPin>>,
-        // rx_dma: Option<ChannelAndRequest<'d>>,
+        rx_dma: Option<ChannelAndRequest<'d>>,
         config: Config,
     ) -> Result<Self, ConfigError> {
         let mut this = Self {
@@ -879,7 +879,7 @@ impl<'d, T: Instance, M: Mode> UartRx<'d, T, M> {
             kernel_clock: T::frequency().unwrap(),
             rx,
             rts,
-            // rx_dma,
+            rx_dma,
             _detect_previous_overrun: config._detect_previous_overrun,
         };
         this.enable_and_configure(&config)?;
@@ -992,148 +992,146 @@ fn drop_tx_rx<T: Instance>(state: &State) {
     }
 }
 
-// impl<'d, T: Instance> Uart<'d, T, Async> {
-//     /// Create a new bidirectional UART
-//     pub fn new(
-//         peri: impl Peripheral<P = T> + 'd,
-//         rx: impl Peripheral<P = impl RxdPin<T>> + 'd,
-//         tx: impl Peripheral<P = impl TxdPin<T>> + 'd,
-//         _irq: impl interrupt::typelevel::Binding<T::Interrupt, InterruptHandler<T>> + 'd,
-//         tx_dma: impl Peripheral<P = impl TxDma<T>> + 'd,
-//         rx_dma: impl Peripheral<P = impl RxDma<T>> + 'd,
-//         config: Config,
-//     ) -> Result<Self, ConfigError> {
-//         Self::new_inner(
-//             peri,
-//             new_pin!(rx, config.rx_af()),
-//             new_pin!(tx, config.tx_af()),
-//             None,
-//             None,
-//             None,
-//             new_dma!(tx_dma),
-//             new_dma!(rx_dma),
-//             config,
-//         )
-//     }
+impl<'d, T: Instance> Uart<'d, T, Async> {
+    /// Create a new bidirectional UART
+    pub fn new(
+        peri: impl Peripheral<P = T> + 'd,
+        rx: impl Peripheral<P = impl RxdPin<T>> + 'd,
+        tx: impl Peripheral<P = impl TxdPin<T>> + 'd,
+        _irq: impl interrupt::typelevel::Binding<T::Interrupt, InterruptHandler<T>> + 'd,
+        tx_dma: impl Peripheral<P = impl TxDma<T>> + 'd,
+        rx_dma: impl Peripheral<P = impl RxDma<T>> + 'd,
+        config: Config,
+    ) -> Result<Self, ConfigError> {
+        Self::new_inner(
+            peri,
+            new_pin!(rx, config.rx_af()),
+            new_pin!(tx, config.tx_af()),
+            None,
+            None,
+            new_dma!(tx_dma),
+            new_dma!(rx_dma),
+            config,
+        )
+    }
 
-//     /// Create a new bidirectional UART with request-to-send and clear-to-send pins
-//     pub fn new_with_rtscts(
-//         peri: impl Peripheral<P = T> + 'd,
-//         rx: impl Peripheral<P = impl RxdPin<T>> + 'd,
-//         tx: impl Peripheral<P = impl TxdPin<T>> + 'd,
-//         _irq: impl interrupt::typelevel::Binding<T::Interrupt, InterruptHandler<T>> + 'd,
-//         rts: impl Peripheral<P = impl RtsPin<T>> + 'd,
-//         cts: impl Peripheral<P = impl CtsPin<T>> + 'd,
-//         tx_dma: impl Peripheral<P = impl TxDma<T>> + 'd,
-//         rx_dma: impl Peripheral<P = impl RxDma<T>> + 'd,
-//         config: Config,
-//     ) -> Result<Self, ConfigError> {
-//         Self::new_inner(
-//             peri,
-//             new_pin!(rx, config.rx_af()),
-//             new_pin!(tx, config.tx_af()),
-//             new_pin!(rts, AfType::new(Pull::Up)),
-//             new_pin!(cts, AfType::new(Pull::None)),
-//             None,
-//             new_dma!(tx_dma),
-//             new_dma!(rx_dma),
-//             config,
-//         )
-//     }
+    /// Create a new bidirectional UART with request-to-send and clear-to-send pins
+    pub fn new_with_rtscts(
+        peri: impl Peripheral<P = T> + 'd,
+        rx: impl Peripheral<P = impl RxdPin<T>> + 'd,
+        tx: impl Peripheral<P = impl TxdPin<T>> + 'd,
+        _irq: impl interrupt::typelevel::Binding<T::Interrupt, InterruptHandler<T>> + 'd,
+        rts: impl Peripheral<P = impl RtsPin<T>> + 'd,
+        cts: impl Peripheral<P = impl CtsPin<T>> + 'd,
+        tx_dma: impl Peripheral<P = impl TxDma<T>> + 'd,
+        rx_dma: impl Peripheral<P = impl RxDma<T>> + 'd,
+        config: Config,
+    ) -> Result<Self, ConfigError> {
+        Self::new_inner(
+            peri,
+            new_pin!(rx, config.rx_af()),
+            new_pin!(tx, config.tx_af()),
+            new_pin!(rts, AfType::new(Pull::Up)),
+            new_pin!(cts, AfType::new(Pull::None)),
+            new_dma!(tx_dma),
+            new_dma!(rx_dma),
+            config,
+        )
+    }
 
-//     /// Create a single-wire half-duplex Uart transceiver on a single Tx pin.
-//     ///
-//     /// See [`new_half_duplex_on_rx`][`Self::new_half_duplex_on_rx`] if you would prefer to use an Rx pin
-//     /// (when it is available for your chip). There is no functional difference between these methods, as both
-//     /// allow bidirectional communication.
-//     ///
-//     /// The TX pin is always released when no data is transmitted. Thus, it acts as a standard
-//     /// I/O in idle or in reception. It means that the I/O must be configured so that TX is
-//     /// configured as alternate function open-drain with an external pull-up
-//     /// Apart from this, the communication protocol is similar to normal USART mode. Any conflict
-//     /// on the line must be managed by software (for instance by using a centralized arbiter).
-//     #[doc(alias("HDSEL"))]
-//     pub fn new_half_duplex(
-//         peri: impl Peripheral<P = T> + 'd,
-//         tx: impl Peripheral<P = impl TxdPin<T>> + 'd,
-//         _irq: impl interrupt::typelevel::Binding<T::Interrupt, InterruptHandler<T>> + 'd,
-//         tx_dma: impl Peripheral<P = impl TxDma<T>> + 'd,
-//         rx_dma: impl Peripheral<P = impl RxDma<T>> + 'd,
-//         mut config: Config,
-//         readback: HalfDuplexReadback,
-//         half_duplex: HalfDuplexConfig,
-//     ) -> Result<Self, ConfigError> {
-//         config.duplex = Duplex::Half(readback);
+    /// Create a single-wire half-duplex Uart transceiver on a single Tx pin.
+    ///
+    /// See [`new_half_duplex_on_rx`][`Self::new_half_duplex_on_rx`] if you would prefer to use an Rx pin
+    /// (when it is available for your chip). There is no functional difference between these methods, as both
+    /// allow bidirectional communication.
+    ///
+    /// The TX pin is always released when no data is transmitted. Thus, it acts as a standard
+    /// I/O in idle or in reception. It means that the I/O must be configured so that TX is
+    /// configured as alternate function open-drain with an external pull-up
+    /// Apart from this, the communication protocol is similar to normal USART mode. Any conflict
+    /// on the line must be managed by software (for instance by using a centralized arbiter).
+    #[doc(alias("HDSEL"))]
+    pub fn new_half_duplex(
+        peri: impl Peripheral<P = T> + 'd,
+        tx: impl Peripheral<P = impl TxdPin<T>> + 'd,
+        _irq: impl interrupt::typelevel::Binding<T::Interrupt, InterruptHandler<T>> + 'd,
+        tx_dma: impl Peripheral<P = impl TxDma<T>> + 'd,
+        rx_dma: impl Peripheral<P = impl RxDma<T>> + 'd,
+        mut config: Config,
+        readback: HalfDuplexReadback,
+        half_duplex: HalfDuplexConfig,
+    ) -> Result<Self, ConfigError> {
+        config.duplex = Duplex::Half(readback);
 
-//         Self::new_inner(
-//             peri,
-//             None,
-//             new_pin!(tx, half_duplex.af_type()),
-//             None,
-//             None,
-//             None,
-//             new_dma!(tx_dma),
-//             new_dma!(rx_dma),
-//             config,
-//         )
-//     }
+        Self::new_inner(
+            peri,
+            None,
+            new_pin!(tx, half_duplex.af_type()),
+            None,
+            None,
+            new_dma!(tx_dma),
+            new_dma!(rx_dma),
+            config,
+        )
+    }
 
-//     /// Create a single-wire half-duplex Uart transceiver on a single Rx pin.
-//     ///
-//     /// See [`new_half_duplex`][`Self::new_half_duplex`] if you would prefer to use an Tx pin.
-//     /// There is no functional difference between these methods, as both allow bidirectional communication.
-//     ///
-//     /// The pin is always released when no data is transmitted. Thus, it acts as a standard
-//     /// I/O in idle or in reception.
-//     /// Apart from this, the communication protocol is similar to normal USART mode. Any conflict
-//     /// on the line must be managed by software (for instance by using a centralized arbiter).
-//     #[cfg(not(any(usart_v1, usart_v2)))]
-//     #[doc(alias("HDSEL"))]
-//     pub fn new_half_duplex_on_rx(
-//         peri: impl Peripheral<P = T> + 'd,
-//         rx: impl Peripheral<P = impl RxdPin<T>> + 'd,
-//         _irq: impl interrupt::typelevel::Binding<T::Interrupt, InterruptHandler<T>> + 'd,
-//         tx_dma: impl Peripheral<P = impl TxDma<T>> + 'd,
-//         rx_dma: impl Peripheral<P = impl RxDma<T>> + 'd,
-//         mut config: Config,
-//         readback: HalfDuplexReadback,
-//         half_duplex: HalfDuplexConfig,
-//     ) -> Result<Self, ConfigError> {
-//         config.duplex = Duplex::Half(readback);
+    // TODO: Do we have this?
+    // embassy_stm32: #[cfg(not(any(usart_v1, usart_v2)))]
+    //
+    /// Create a single-wire half-duplex Uart transceiver on a single Rx pin.
+    ///
+    /// See [`new_half_duplex`][`Self::new_half_duplex`] if you would prefer to use an Tx pin.
+    /// There is no functional difference between these methods, as both allow bidirectional communication.
+    ///
+    /// The pin is always released when no data is transmitted. Thus, it acts as a standard
+    /// I/O in idle or in reception.
+    /// Apart from this, the communication protocol is similar to normal USART mode. Any conflict
+    /// on the line must be managed by software (for instance by using a centralized arbiter).
+    #[doc(alias("HDSEL"))]
+    pub fn new_half_duplex_on_rx(
+        peri: impl Peripheral<P = T> + 'd,
+        rx: impl Peripheral<P = impl RxdPin<T>> + 'd,
+        _irq: impl interrupt::typelevel::Binding<T::Interrupt, InterruptHandler<T>> + 'd,
+        tx_dma: impl Peripheral<P = impl TxDma<T>> + 'd,
+        rx_dma: impl Peripheral<P = impl RxDma<T>> + 'd,
+        mut config: Config,
+        readback: HalfDuplexReadback,
+        half_duplex: HalfDuplexConfig,
+    ) -> Result<Self, ConfigError> {
+        config.duplex = Duplex::Half(readback);
 
-//         Self::new_inner(
-//             peri,
-//             None,
-//             None,
-//             new_pin!(rx, half_duplex.af_type()),
-//             None,
-//             None,
-//             new_dma!(tx_dma),
-//             new_dma!(rx_dma),
-//             config,
-//         )
-//     }
+        Self::new_inner(
+            peri,
+            None,
+            None,
+            new_pin!(rx, half_duplex.af_type()),
+            None,
+            new_dma!(tx_dma),
+            new_dma!(rx_dma),
+            config,
+        )
+    }
 
-//     /// Perform an asynchronous write
-//     pub async fn write(&mut self, buffer: &[u8]) -> Result<(), Error> {
-//         self.tx.write(buffer).await
-//     }
+    /// Perform an asynchronous write
+    pub async fn write(&mut self, buffer: &[u8]) -> Result<(), Error> {
+        self.tx.write(buffer).await
+    }
 
-//     /// Wait until transmission complete
-//     pub async fn flush(&mut self) -> Result<(), Error> {
-//         self.tx.flush().await
-//     }
+    /// Wait until transmission complete
+    pub async fn flush(&mut self) -> Result<(), Error> {
+        self.tx.flush().await
+    }
 
-//     /// Perform an asynchronous read into `buffer`
-//     pub async fn read(&mut self, buffer: &mut [u8]) -> Result<(), Error> {
-//         self.rx.read(buffer).await
-//     }
+    /// Perform an asynchronous read into `buffer`
+    pub async fn read(&mut self, buffer: &mut [u8]) -> Result<(), Error> {
+        self.rx.read(buffer).await
+    }
 
-//     /// Perform an an asynchronous read with idle line detection enabled
-//     pub async fn read_until_idle(&mut self, buffer: &mut [u8]) -> Result<usize, Error> {
-//         self.rx.read_until_idle(buffer).await
-//     }
-// }
+    /// Perform an an asynchronous read with idle line detection enabled
+    pub async fn read_until_idle(&mut self, buffer: &mut [u8]) -> Result<usize, Error> {
+        self.rx.read_until_idle(buffer).await
+    }
+}
 
 impl<'d, T: Instance> Uart<'d, T, Blocking> {
     /// Create a new blocking bidirectional UART.
@@ -1149,8 +1147,8 @@ impl<'d, T: Instance> Uart<'d, T, Blocking> {
             new_pin!(tx, config.tx_af()),
             None,
             None,
-            // None,
-            // None,
+            None,
+            None,
             config,
         )
     }
@@ -1170,8 +1168,8 @@ impl<'d, T: Instance> Uart<'d, T, Blocking> {
             new_pin!(tx, config.tx_af()),
             new_pin!(rts, AfType::new(Pull::Up)),
             new_pin!(cts, AfType::new(Pull::None)),
-            // None,
-            // None,
+            None,
+            None,
             config,
         )
     }
@@ -1202,8 +1200,8 @@ impl<'d, T: Instance> Uart<'d, T, Blocking> {
             new_pin!(tx, half_duplex.af_type()),
             None,
             None,
-            // None,
-            // None,
+            None,
+            None,
             config,
         )
     }
@@ -1233,8 +1231,8 @@ impl<'d, T: Instance> Uart<'d, T, Blocking> {
             None,
             new_pin!(rx, half_duplex.af_type()),
             None,
-            // None,
-            // None,
+            None,
+            None,
             config,
         )
     }
@@ -1247,8 +1245,8 @@ impl<'d, T: Instance, M: Mode> Uart<'d, T, M> {
         tx: Option<PeripheralRef<'d, AnyPin>>,
         rts: Option<PeripheralRef<'d, AnyPin>>,
         cts: Option<PeripheralRef<'d, AnyPin>>,
-        // tx_dma: Option<ChannelAndRequest<'d>>,
-        // rx_dma: Option<ChannelAndRequest<'d>>,
+        tx_dma: Option<ChannelAndRequest<'d>>,
+        rx_dma: Option<ChannelAndRequest<'d>>,
         config: Config,
     ) -> Result<Self, ConfigError> {
         let state = T::state();
@@ -1261,7 +1259,7 @@ impl<'d, T: Instance, M: Mode> Uart<'d, T, M> {
                 kernel_clock,
                 tx,
                 cts,
-                // tx_dma,
+                tx_dma,
                 duplex: config.duplex,
             },
             rx: UartRx {
@@ -1270,7 +1268,7 @@ impl<'d, T: Instance, M: Mode> Uart<'d, T, M> {
                 kernel_clock,
                 rx,
                 rts,
-                // rx_dma,
+                rx_dma,
                 _detect_previous_overrun: config._detect_previous_overrun,
             },
         };
@@ -1693,35 +1691,35 @@ impl<T:Instance, M: Mode> embedded_io::Write for UartTx<'_, T, M> {
     }
 }
 
-// impl embedded_io_async::Write for Uart<'_, T, Async> {
-//     async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
-//         self.write(buf).await?;
-//         Ok(buf.len())
-//     }
+impl<T:Instance> embedded_io_async::Write for Uart<'_, T, Async> {
+    async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
+        self.write(buf).await?;
+        Ok(buf.len())
+    }
 
-//     async fn flush(&mut self) -> Result<(), Self::Error> {
-//         self.flush().await
-//     }
-// }
+    async fn flush(&mut self) -> Result<(), Self::Error> {
+        self.flush().await
+    }
+}
 
-// impl embedded_io_async::Write for UartTx<'_, T, Async> {
-//     async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
-//         self.write(buf).await?;
-//         Ok(buf.len())
-//     }
+impl<T:Instance> embedded_io_async::Write for UartTx<'_, T, Async> {
+    async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
+        self.write(buf).await?;
+        Ok(buf.len())
+    }
 
-//     async fn flush(&mut self) -> Result<(), Self::Error> {
-//         self.flush().await
-//     }
-// }
+    async fn flush(&mut self) -> Result<(), Self::Error> {
+        self.flush().await
+    }
+}
 
 pub use buffered::*;
 
 pub use crate::usart::buffered::InterruptHandler as BufferedInterruptHandler;
 mod buffered;
 
-// mod ringbuffered;
-// pub use ringbuffered::RingBufferedUartRx;
+mod ringbuffered;
+pub use ringbuffered::RingBufferedUartRx;
 
 fn clear_interrupt_flags(r: Regs, sr: regs::Isr) {
     r.icr().write(|w| *w = regs::Icr(sr.0));
@@ -1770,8 +1768,8 @@ pin_trait!(CtsPin, Instance);
 pin_trait!(RtsPin, Instance);
 pin_trait!(CkPin, Instance);
 
-// dma_trait!(TxDma, Instance);
-// dma_trait!(RxDma, Instance);
+dma_trait!(TxDma, Instance);
+dma_trait!(RxDma, Instance);
 
 macro_rules! impl_usart {
     ($inst:ident, $irq:ident, $kind:expr) => {
@@ -1806,6 +1804,7 @@ macro_rules! impl_usart {
     };
 }
 
+// TODO: move to _generated.rs
 impl_usart!(USART1, USART1, Kind::Uart);
 impl_usart!(USART2, USART2, Kind::Uart);
 impl_usart!(USART3, USART3, Kind::Uart);

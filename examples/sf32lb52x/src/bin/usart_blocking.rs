@@ -26,7 +26,7 @@ async fn main(_spawner: Spawner) {
     unwrap!(usart.blocking_write(b"Hello Embedded Rust!\n"));
     unwrap!(usart.blocking_write(b"wrote Hello, starting echo\n"));
     
-    info!("wrote Hello, starting echo");
+    info!("wrote Hello, starting echo(Try write someting at 5 bytes)");
 
     loop {
         let mut buf = [0u8; 5];
