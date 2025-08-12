@@ -118,7 +118,7 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
     </tr>
     <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" rowspan="3"><strong>RCC</strong></td>
+      <td style="border: 1px solid #ddd; padding: 8px;" rowspan="4"><strong>RCC</strong></td>
       <td style="border: 1px solid #ddd; padding: 8px;">Peripheral RCC Codegen (enable, freq...)</td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
@@ -128,6 +128,13 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
     <tr>
       <td style="border: 1px solid #ddd; padding: 8px;">Read current RCC tree</td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #ddd; padding: 8px;">RCC tree Configure</td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">🌗</td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
@@ -198,7 +205,7 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
     </tr>
     <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" rowspan="3"><strong>USART</strong></td>
+      <td style="border: 1px solid #ddd; padding: 8px;" rowspan="4"><strong>USART</strong></td>
       <td style="border: 1px solid #ddd; padding: 8px;">Blocking</td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
@@ -214,7 +221,14 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
     </tr>
     <tr>
       <td style="border: 1px solid #ddd; padding: 8px;">DMA ➕</td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #ddd; padding: 8px;">RingBuffered(DMA) ➕</td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">❓</td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
@@ -277,7 +291,22 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
     </tr>
     <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" colspan="2"><strong>DMA</strong></td>
+      <td style="border: 1px solid #ddd; padding: 8px;" rowspan="3"><strong>DMA</strong></td>
+      <td style="border: 1px solid #ddd; padding: 8px;">Transfer(P2M, M2P)</td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #ddd; padding: 8px;">RingBuffer</td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">❓</td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #ddd; padding: 8px;">ExtDMA</td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
