@@ -24,6 +24,7 @@ impl<'d> ChannelAndRequest<'d> {
         Transfer::new_read(self.channel.reborrow(), self.request, peri_addr, buf, options)
     }
 
+    #[allow(unused)]
     pub unsafe fn read_raw<'a, MW: Word, PW: Word>(
         &'a mut self,
         peri_addr: *mut PW,
@@ -42,6 +43,7 @@ impl<'d> ChannelAndRequest<'d> {
         Transfer::new_write(self.channel.reborrow(), self.request, buf, peri_addr, options)
     }
 
+    #[allow(unused)]
     pub unsafe fn write_raw<'a, MW: Word, PW: Word>(
         &'a mut self,
         buf: *const [MW],

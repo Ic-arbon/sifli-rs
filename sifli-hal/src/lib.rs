@@ -94,8 +94,10 @@ pub fn init(config: Config) -> Peripherals {
         time_driver::init();
         
         gpio::init(config.gpio1_it_priority);
-
-        // dma::init();
+        critical_section::with(|cs| {
+            dma::init(cs);
+        });
+        
     }
     p
 }

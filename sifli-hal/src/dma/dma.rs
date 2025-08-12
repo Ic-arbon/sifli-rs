@@ -3,6 +3,7 @@
 // Special thanks to the Embassy Project and its contributors for their work!
 
 use core::future::{poll_fn, Future};
+use core::mem;
 use core::pin::Pin;
 use core::sync::atomic::{fence, AtomicUsize, Ordering};
 use core::task::{Context, Poll, Waker};
@@ -13,8 +14,7 @@ use embassy_sync::waitqueue::AtomicWaker;
 use super::ringbuffer::{DmaCtrl, Error, ReadableDmaRingBuffer, WritableDmaRingBuffer};
 use super::word::{Word, WordSize};
 use super::{AnyChannel, Channel, Request, STATE};
-use crate::interrupt::typelevel::Interrupt;
-use crate::{interrupt, pac};
+use crate::{interrupt, pac, peripherals};
 
 pub use pac::dmac::vals::Pl as Priority;
 pub use pac::dmac::vals::Dir as Dir;
@@ -31,6 +31,8 @@ pub(crate) struct ChannelInfo {
 pub struct TransferOptions {
     /// Request priority level
     pub priority: Priority,
+    /// Channel Interrupt priority level
+    pub interrupt_priority: interrupt::Priority,
     /// Enable circular DMA
     ///
     /// Note:
@@ -47,6 +49,7 @@ impl Default for TransferOptions {
     fn default() -> Self {
         Self {
             priority: Priority::VeryHigh,
+            interrupt_priority: interrupt::Priority::P1,
             circular: false,
             half_transfer_ir: false,
             complete_transfer_ir: true,
@@ -79,15 +82,8 @@ impl ChannelState {
 /// safety: must be called only once
 pub(crate) unsafe fn init(
     cs: critical_section::CriticalSection,
-    dma_priority: interrupt::Priority,
 ) {
-    // foreach_interrupt! {
-    //     ($peri:ident, dma, $block:ident, $signal_name:ident, $irq:ident) => {
-    //         crate::interrupt::typelevel::$irq::set_priority_with_cs(cs, dma_priority);
-    //         crate::interrupt::typelevel::$irq::enable();
-    //     };
-    // }
-    // crate::_generated::init_dma();
+    crate::rcc::enable_and_reset_with_cs::<peripherals::DMAC1>(cs);
 }
 
 impl AnyChannel {
@@ -109,6 +105,14 @@ impl AnyChannel {
         } else if isr.tcif(info.num % 4) && cr.read().tcie() {
             // Acknowledge transfer complete interrupt
             r.ifcr().write(|w| w.set_ctcif(info.num % 4, true));
+
+            // stop the channel.
+            // we should set EN manually on sf32. (?)
+            if !r.ccr(info.num).read().circ() {
+                r.ccr(info.num).modify(|w| {
+                    w.set_en(false); 
+                });
+            }
             state.complete_count.fetch_add(1, Ordering::Release);
         } else {
             return;
@@ -161,9 +165,19 @@ impl AnyChannel {
 
         
         r.cpar(channel_num).write_value(pac::dmac::regs::Cpar(peri_addr as _));
-        r.cm0ar(channel_num).write_value(pac::dmac::regs::Cm0ar(mem_addr as _));
+        
+        // r.cm0ar(channel_num).write_value(pac::dmac::regs::Cm0ar(0x2000_0100 as _));
+        // 0x1200_00AA -> 0x6200_00AA
+        let mem_addr = if mem_addr as u32 >= 0x2000_0000 {
+            mem_addr as u32
+        } else {
+            mem_addr as u32  + 0x5000_0000
+        };
+        info!("mem_addr {:X}", (mem_addr as u32 + 0x5000_0000));
+        r.cm0ar(channel_num).write_value(pac::dmac::regs::Cm0ar(mem_addr));
         r.cndtr(channel_num).write_value(pac::dmac::regs::Cndtr(ndtr as _));
-        r.cselr(channel_num).write_value(pac::dmac::regs::Cselr(request as _));
+        r.cselr(channel_num / 4)
+            .modify(|w| w.set_cs(channel_num % 4, request as u8));
         r.ccr(channel_num).write(|w| {
             w.set_dir(dir.into());
             w.set_msize(mem_size.into());
@@ -177,6 +191,8 @@ impl AnyChannel {
             w.set_circ(options.circular);
             w.set_en(false); // don't start yet
         });
+
+        crate::_generated::enable_dma_channel_interrupt_priority(self.id, options.interrupt_priority);
     }
 
     fn start(&self) {
