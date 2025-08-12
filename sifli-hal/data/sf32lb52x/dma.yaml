@@ -19,7 +19,6 @@ hcpu:
         id: 6
       - name: usart2_rx
         id: 7
-        used: false
       - name: gptim1_update
         id: 8
         used: false

@@ -533,42 +533,50 @@ fn generate_dma_impls(dma: &build_serde::Dma) -> TokenStream {
         }
     });
 
-    // 2. Generate `dma_trait_impl!` calls for requests where `used` is true.
-    let trait_impls = dma_hcpu.controllers.iter().flat_map(|(dmac_name, controller)| {
-        controller.request.iter()
-            .filter(|r| r.used)
-            .map(move |req| {
-                let (peripheral_str, signal_str) = req.name.split_once('_').unwrap_or((&req.name, ""));
+    // 2. Generate `dma_trait_impl!` calls for requests where `used` is true..
+    let trait_impls = dma_hcpu.controllers.values()
+        .flat_map(|controller| &controller.request) // Iterate over all requests
+        .filter(|req| req.used)
+        .flat_map(move |req| {
+            // For each request, get the necessary info
+            let (peripheral_str, signal_str) = req.name.split_once('_').unwrap_or((&req.name, ""));
+            
+            // Prefer explicit module name from yaml, otherwise infer from peripheral name.
+            let module_name = req.module.as_ref()
+                .map(|m| m.clone())
+                .unwrap_or_else(|| {
+                    // Remove trailing digits (e.g., "USART1" -> "usart")
+                    peripheral_str.trim_end_matches(|c: char| c.is_ascii_digit()).to_string()
+                });
+            
+            let module_ident = format_ident!("{}", module_name);
+            let peripheral_ident = format_ident!("{}", peripheral_str.to_uppercase());
+            let trait_ident = if signal_str.is_empty() {
+                format_ident!("Dma")
+            } else {
+                format_ident!("{}Dma", to_pascal_case(signal_str))
+            };
+            let request_variant = format_ident!("{}", to_pascal_case(&req.name));
 
-                // Prefer explicit module name from yaml, otherwise infer from peripheral name.
-                let module_name = req.module.as_ref()
-                    .map(|m| m.clone())
-                    .unwrap_or_else(|| {
-                        // Remove trailing digits (e.g., "UART1" -> "UART")
-                        peripheral_str.trim_end_matches(|c: char| c.is_ascii_digit()).to_string()
-                    });
-                
-                let module_ident = format_ident!("{}", module_name);
-                
-                let peripheral_ident = format_ident!("{}", peripheral_str.to_uppercase());
+            // Now, for this single request, iterate over ALL available channels from ALL controllers
+            dma_hcpu.controllers.iter().flat_map(move |(dmac_name, controller)| {
+                // Clone the variables that will be moved into the inner closure.
+                // This ensures each iteration of the inner map gets its own copy.
+                let module_ident = module_ident.clone();
+                let peripheral_ident = peripheral_ident.clone();
+                let trait_ident = trait_ident.clone();
+                let request_variant = request_variant.clone();
 
-                let trait_ident = if signal_str.is_empty() {
-                    format_ident!("Dma")
-                } else {
-                    format_ident!("{}Dma", to_pascal_case(signal_str))
-                };
+                (1..=controller.channel_total).map(move |i| {
+                    // Generate an impl for each channel
+                    let channel_ident = format_ident!("{}_CH{}", dmac_name, i);
 
-                // TODO: This is still a placeholder. The mapping from a request
-                // to a specific DMA channel needs to be defined in `dma.yaml`.
-                let channel_ident = format_ident!("{}_CH6", dmac_name);
-
-                let request_variant = format_ident!("{}", to_pascal_case(&req.name));
-
-                quote! {
-                    dma_trait_impl!(crate::#module_ident::#trait_ident, #peripheral_ident, #channel_ident, Request::#request_variant);
-                }
+                    quote! {
+                        dma_trait_impl!(crate::#module_ident::#trait_ident, #peripheral_ident, #channel_ident, Request::#request_variant);
+                    }
+                })
             })
-    });
+        });
 
     implementations.extend(quote! {
         #(#trait_impls)*
@@ -603,6 +611,36 @@ fn generate_dma_impls(dma: &build_serde::Dma) -> TokenStream {
             });
         }
     }
+
+    // 4. Generate the function to enable DMA channel interrupts.
+    let mut match_arms = TokenStream::new();
+    let mut current_channel_id: u8 = 0;
+
+    for (dmac_name, controller) in &dma_hcpu.controllers {
+        for i in 1..=controller.channel_total {
+            let channel_name_str = format!("{}_CH{}", dmac_name, i);
+            let channel_ident = format_ident!("{}", channel_name_str);
+            
+            match_arms.extend(quote! {
+                #current_channel_id => {
+                    crate::interrupt::typelevel::#channel_ident::set_priority(priority);
+                    crate::interrupt::typelevel::#channel_ident::enable();
+                }
+            });
+            current_channel_id += 1;
+        }
+    }
+
+    implementations.extend(quote! {
+        /// Enables the interrupt for a given DMA channel and sets its priority.
+        pub unsafe fn enable_dma_channel_interrupt_priority(id: u8, priority: crate::interrupt::Priority) {
+            use crate::_generated::interrupt::typelevel::Interrupt;
+            match id {
+                #match_arms
+                _ => panic!("Invalid DMA channel ID"),
+            }
+        }
+    });
 
     implementations
 }
