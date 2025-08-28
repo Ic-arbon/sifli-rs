@@ -24,6 +24,3 @@ temp/
 
 # macOS
 .DS_Store
-
-# firmware file
-*.bin

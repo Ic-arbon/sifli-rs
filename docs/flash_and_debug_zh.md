@@ -8,7 +8,9 @@
 
 芯片出厂时自带引导加载程序(bootloader)，或者在烧录一次后您可以选择不再覆盖它。flash table包含有关实际固件大小的信息，所以您要么需要每次都更新它，要么在flash table中将固件大小设置得非常大。
 
-您可以使用[sifli-flash-table](../sifli-flash-table/README.md)生成一个新的`ftab.bin`。(这是Linux和Mac用户的唯一方法；对于Windows用户，您也可以使用从SDK编译的`ftab.bin`。确保新的固件大小小于它)
+您可以使用[sifli-flash-table](../sifli-flash-table/README.md)生成一个新的`ftab.bin`。这是Linux和Mac用户的唯一方法；对于Windows用户，您也可以使用从SDK编译的`ftab.bin`。确保新的固件大小小于它。
+
+你可以在[这里](examples\sf32lb52x)找到准备好的ftab.bin， 它由[sifli-flash-table](../sifli-flash-table/README.md)生成。
 
 ### SFTool (适用于Linux、Mac和Windows)
 
