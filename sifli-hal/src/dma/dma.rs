@@ -3,7 +3,6 @@
 // Special thanks to the Embassy Project and its contributors for their work!
 
 use core::future::{poll_fn, Future};
-use core::mem;
 use core::pin::Pin;
 use core::sync::atomic::{fence, AtomicUsize, Ordering};
 use core::task::{Context, Poll, Waker};

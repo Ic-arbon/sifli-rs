@@ -33,11 +33,9 @@ hcpu:
   - name: TRNG
     clock: clk_peri
   - name: MPI1
-    # TODO: clock select
-    clock: clk_dll2
+    clock: clk_mpi1
   - name: MPI2
-    # TODO: clock select
-    clock: clk_dll2
+    clock: clk_mpi2
   - name: SDMMC1
     clock: clk_peri
   - name: CRC1
@@ -106,6 +104,7 @@ hcpu:
   - name: IWDT
     enable_reset: false
     clock: clk_wdt
-  
   - name: ADC_VBAT
     enable_reset: false
+  - name: USBC
+    clock: clk_usb

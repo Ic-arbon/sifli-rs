@@ -16,7 +16,7 @@ pub use crate::pac::hpsys_rcc::vals::{
 // clk_rtc(TODO), clk_wdt(TODO)
 // hclk, pclk1, pclk2
 // clk_usb
-// TODO: lxt32, lrc32, lrc10
+// TODO: lxt32, lrc32, lrc10, clk_mpi1, clk_mpi2
 
 /// clk_sys
 pub fn get_clk_sys_freq() -> Option<Hertz> {
@@ -98,13 +98,6 @@ pub fn get_clk_dll2_freq() -> Option<Hertz> {
     }
 }
 
-pub fn get_clk_usb_freq() -> Option<Hertz> {
-    match HPSYS_RCC.csr().read().sel_usbc() {
-        UsbSel::ClkSys => get_clk_sys_freq(),
-        UsbSel::Dll2 => get_clk_dll2_freq(),
-    }.map(|f| f / HPSYS_RCC.usbcr().read().div())
-}
-
 pub fn get_clk_aud_pll_freq() -> Option<Hertz> {
     Some(Hertz(49_152_000))
 }
@@ -112,6 +105,34 @@ pub fn get_clk_aud_pll_freq() -> Option<Hertz> {
 pub fn get_clk_aud_pll_div16_freq() -> Option<Hertz> {
     Some(Hertz(49_152_000 / 16))
 }
+
+pub fn get_clk_usb_freq() -> Option<Hertz> {
+    match HPSYS_RCC.csr().read().sel_usbc() {
+        UsbSel::ClkSys => get_clk_sys_freq(),
+        UsbSel::Dll2 => get_clk_dll2_freq(),
+    }.map(|f| f / HPSYS_RCC.usbcr().read().div())
+}
+
+pub fn get_clk_usb_source() -> UsbSel {
+    HPSYS_RCC.csr().read().sel_usbc()
+}
+
+pub fn get_clk_usb_div() -> u8 {
+    HPSYS_RCC.usbcr().read().div()
+}
+
+pub fn get_clk_mpi1_freq() -> Option<Hertz> {
+    todo!()
+}
+
+pub fn get_clk_mpi2_freq() -> Option<Hertz> {
+    todo!()
+}
+
+// TODO: MPI1 & MPI2
+// pub fn get_clk_mpi1_source() -> SelMpi{
+//     HPSYS_RCC.csr().read().sel_mpi1()
+// }
 
 pub fn get_clk_wdt_freq() -> Option<Hertz> {
     todo!()
@@ -126,29 +147,39 @@ pub fn test_print_clocks() {
     
     let clocks = [
         ("clk_sys", get_clk_sys_freq()),
-        ("clk_peri", get_clk_peri_freq()),
-        ("clk_peri_div2", get_clk_peri_div2_freq()),
         ("hclk", get_hclk_freq()),
         ("pclk1", get_pclk1_freq()),
         ("pclk2", get_pclk2_freq()),
-        ("hxt48", get_hxt48_freq()),
-        ("hrc48", get_hrc48_freq()),
+        ("clk_peri", get_clk_peri_freq()),
+        ("clk_peri_div2", get_clk_peri_div2_freq()),
         ("clk_dll1", get_clk_dll1_freq()),
         ("clk_dll2", get_clk_dll2_freq()),
+        ("hxt48", get_hxt48_freq()),
+        ("hrc48", get_hrc48_freq()),
         ("clk_usb", get_clk_usb_freq()),
         ("clk_aud_pll", get_clk_aud_pll_freq()),
+        ("clk_aud_pll_div16", get_clk_aud_pll_div16_freq()),
     ];
 
-    for (name, freq) in clocks {
-        if let Some(f) = freq {
-            let freq_khz = f.0 / 1_000;
-            info!("{}: {}.{:03} MHz", 
-                name,
-                freq_khz / 1_000,
-                freq_khz % 1_000
-            );
+for (name, freq) in clocks {
+    if let Some(f) = freq {
+        let freq_khz = f.0 / 1_000;
+        let mhz_part = freq_khz / 1_000;
+        let khz_part = freq_khz % 1_000;
+
+        if khz_part == 0 {
+            info!("  - {}: {} MHz", name, mhz_part);
+        } else if mhz_part == 0 {
+            info!("  - {}: {} kHz", name, khz_part);
         } else {
-            info!("{}: disabled", name);
+            info!("  - {}: {}.{:03} MHz",
+                  name,
+                  mhz_part,
+                  khz_part
+            );
         }
+    } else {
+        info!("  - {}: disabled", name);
     }
+}
 }

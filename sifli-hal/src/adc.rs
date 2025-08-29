@@ -355,6 +355,17 @@ impl<'d> Adc<'d, Async> {
     }
 }
 
-pub trait Instance {}
-impl Instance for peripherals::GPADC {}
+#[allow(private_interfaces)]
+pub(crate) trait SealedInstance: crate::rcc::RccEnableReset + crate::rcc::RccGetFreq {}
+
+#[allow(private_bounds)]
+pub trait Instance: Peripheral<P = Self> + SealedInstance + 'static + Send {
+    /// Interrupt for this peripheral.
+    type Interrupt: interrupt::typelevel::Interrupt;
+}
+impl SealedInstance for peripherals::GPADC {}
+impl Instance for peripherals::GPADC {
+    type Interrupt = crate::interrupt::typelevel::GPADC;
+}
+
 dma_trait!(Dma, Instance);

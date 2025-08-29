@@ -10,7 +10,7 @@ use embassy_sync::waitqueue::AtomicWaker;
 use hpsys::HpsysPin;
 
 use crate::interrupt::InterruptExt;
-use crate::{interrupt, pac, peripherals, Peripheral};
+use crate::{interrupt, peripherals, Peripheral};
 
 // TODO: move this const to _generated.rs
 #[cfg(any(feature = "sf32lb52x"))]
@@ -188,7 +188,7 @@ pub(crate) unsafe fn init(gpio1_it_priority: interrupt::Priority) {
 }
 
 #[cfg(feature = "rt")]
-fn irq_handler<const N: usize>(wakers: &[AtomicWaker; N]) {
+fn irq_handler<const N: usize>(_wakers: &[AtomicWaker; N]) {
     // let cpu = SIO.cpuid().read() as usize;
     // // There are two sets of interrupt registers, one for cpu0 and one for cpu1
     // // and here we are selecting the set that belongs to the currently executing
@@ -229,20 +229,20 @@ fn GPIO1() {
 
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 struct InputFuture<'d> {
-    pin: PeripheralRef<'d, AnyPin>,
+    _pin: PeripheralRef<'d, AnyPin>,
 }
 
 impl<'d> InputFuture<'d> {
-    fn new(pin: PeripheralRef<'d, AnyPin>, level: InterruptTrigger) -> Self {
+    fn new(_pin: PeripheralRef<'d, AnyPin>, _level: InterruptTrigger) -> Self {
         todo!();
-        Self { pin }
+        // Self { _pin }
     }
 }
 
 impl<'d> Future for InputFuture<'d> {
     type Output = ();
 
-    fn poll(self: FuturePin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(self: FuturePin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
         // // We need to register/re-register the waker for each poll because any
         // // calls to wake will deregister the waker.
         // let waker = match self.pin.bank() {
@@ -521,10 +521,22 @@ impl<'d> Flex<'d> {
             inner: HpsysPin::new(pin.pin_bank()),
             pin: pin.map_into(),
         };
-        flex.inner.disable_interrupt();
-        flex.inner.clear_flags();
+        flex.disable_interrupt();
         unsafe { flex.inner.set_fsel_unchecked(0) };
         flex
+    }
+
+    pub unsafe fn new_without_init(pin: impl Peripheral<P = impl Pin> + 'd) -> Self {
+        into_ref!(pin);
+        Self {
+            inner: HpsysPin::new(pin.pin_bank()),
+            pin: pin.map_into(),
+        }
+    }
+
+    pub fn disable_interrupt(&mut self) {
+        self.inner.disable_interrupt();
+        self.inner.clear_flags();
     }
 
     /// Configure pin as output
@@ -689,13 +701,13 @@ pub(crate) trait SealedPin: Sized {
         self.pin_bank() >> 7
     }
 
-    fn gpio(&self) -> pac::hpsys_gpio::HpsysGpio {
-        pac::HPSYS_GPIO
-    }
+    // fn gpio(&self) -> pac::hpsys_gpio::HpsysGpio {
+    //     pac::HPSYS_GPIO
+    // }
 
-    fn pinmux(&self) -> pac::hpsys_pinmux::HpsysPinmux {
-        pac::HPSYS_PINMUX
-    }
+    // fn pinmux(&self) -> pac::hpsys_pinmux::HpsysPinmux {
+    //     pac::HPSYS_PINMUX
+    // }
 
     /// Set the pin as "disconnected", ie doing nothing and consuming the lowest
     /// amount of power possible.
