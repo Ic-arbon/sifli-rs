@@ -42,7 +42,7 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
     <li>❓: 已编写, 需要示例/测试</li>
     <li>📝: 计划中 & 开发中</li>
     <li>❌: 硬件不支持 (N/A)</li>
-    <li>➕: 异步功能</li>
+    <li>➕: Async异步</li>
   </ul>
 </div>
 <table style="border-collapse: collapse; width: 100%;">
@@ -68,7 +68,7 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
     </tr>
     <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" colspan="2"><strong>Startup</strong></td>
+      <td style="border: 1px solid #ddd; padding: 8px;" colspan="2"><strong>Startup & Interrupt</strong></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
@@ -82,14 +82,7 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
     </tr>
     <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" colspan="2"><strong>Interrupt</strong></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" rowspan="4"><strong>embassy</strong></td>
+      <td style="border: 1px solid #ddd; padding: 8px;" rowspan="3"><strong><a href="https://github.com/embassy-rs/embassy">embassy</a></strong></td>
       <td style="border: 1px solid #ddd; padding: 8px;">GPTIM Time Driver</td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
@@ -98,14 +91,7 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
     </tr>
     <tr>
       <td style="border: 1px solid #ddd; padding: 8px;">ATIM Time Driver</td>
-        <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">❓<a href="https://github.com/OpenSiFli/sifli-rs/issues/5">(#5)</a></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">Embassy-style Log (fmt.rs)</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
+        <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><a href="https://github.com/OpenSiFli/sifli-rs/issues/5">(#5)</a></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
@@ -142,35 +128,6 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
     <tr>
       <td style="border: 1px solid #ddd; padding: 8px;">Modify frequency in same DVFS mode</td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" rowspan="4"><strong>PMU</strong></td>
-      <td style="border: 1px solid #ddd; padding: 8px;">DVFS Upscale</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">DVFS Downscale</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">Charge Modoule</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">Buck & LDO</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
@@ -234,6 +191,50 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
     </tr>
     <tr>
+      <td style="border: 1px solid #ddd; padding: 8px;" rowspan="3"><strong>DMA</strong></td>
+      <td style="border: 1px solid #ddd; padding: 8px;">Transfer(P2M, M2P)</td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #ddd; padding: 8px;">RingBuffer</td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">❓</td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #ddd; padding: 8px;">ExtDMA</td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #ddd; padding: 8px;" rowspan="3"><strong>USB<br>(see also:<a href="https://github.com/decaday/musb">musb</a>)</strong></td>
+      <td style="border: 1px solid #ddd; padding: 8px;"><a href="https://crates.io/crates/embassy-usb">embassy-usb</a> ➕</td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #ddd; padding: 8px;">Device: HID, CDC_ACM ...</td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #ddd; padding: 8px;">HOST / OTG</td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+    </tr>
+    <tr>
       <td style="border: 1px solid #ddd; padding: 8px;" rowspan="8"><strong>GPADC</strong></td>
       <td style="border: 1px solid #ddd; padding: 8px;">Blocking</td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
@@ -291,22 +292,58 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
     </tr>
     <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" rowspan="3"><strong>DMA</strong></td>
-      <td style="border: 1px solid #ddd; padding: 8px;">Transfer(P2M, M2P)</td>
+      <td style="border: 1px solid #ddd; padding: 8px;" rowspan="4"><strong>PMU</strong></td>
+      <td style="border: 1px solid #ddd; padding: 8px;">DVFS Upscale</td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
     </tr>
     <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">RingBuffer</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">❓</td>
+      <td style="border: 1px solid #ddd; padding: 8px;">DVFS Downscale</td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
     </tr>
     <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">ExtDMA</td>
+      <td style="border: 1px solid #ddd; padding: 8px;">Charge Modoule</td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #ddd; padding: 8px;">Buck & LDO</td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">🌗</td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #ddd; padding: 8px;" rowspan="4"><strong>Audio</strong></td>
+      <td style="border: 1px solid #ddd; padding: 8px;">AudCodec/ADC, DAC</td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #ddd; padding: 8px;">AudPrc/Channel, Mixer, Volume</td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #ddd; padding: 8px;">I2S/DMA, Master, Slave</td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #ddd; padding: 8px;">PDM</td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
@@ -321,13 +358,6 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
     </tr>
     <tr>
       <td style="border: 1px solid #ddd; padding: 8px;" colspan="2"><strong>SPI</strong></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" colspan="2"><strong>I2S</strong></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
@@ -355,8 +385,8 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
     </tr>
     <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" colspan="2"><strong>USB</strong></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">📝</td>
+      <td style="border: 1px solid #ddd; padding: 8px;" colspan="2"><strong>LCDC/Layer, SPI, DBI</strong></td>
+      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
       <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
