@@ -23,6 +23,7 @@ embassy-futures = { version = "0.1.0" }
 embassy-embedded-hal = { version = "0.3.0" }
 # prio-bits-3: sf32lb52, 55, 56, 58
 embassy-hal-internal = { version = "0.2.0", features = ["cortex-m", "prio-bits-3"] }
+embassy-usb-driver = { version = "0.1" }
 
 defmt = { version = "0.3.10", optional = true }
 log = { version = "0.4.14", optional = true }
@@ -30,6 +31,7 @@ critical-section = "1.2.0"
 cfg-if = { version = "1", features = ["core"] }
 futures-util = { version = "0.3.31", default-features = false }
 nb = "1.0.0"
+musb ={ version =  "0.2.2", features = ["embassy-usb-driver-impl", "prebuild"], optional = true }
 
 # TODO: multicore critical-section impl
 cortex-m = { version = "0.7.7" }
@@ -65,10 +67,12 @@ set-msplim = []
 defmt = ["dep:defmt", 
     "sifli-pac/defmt",
     "embassy-hal-internal/defmt",
+    "musb?/defmt",
 ]
 
 log = ["dep:log"]
 
+usb = ["musb"]
 
 ## Reexport the PAC for the currently enabled chip at `sifli_hal::pac`.
 ## This is unstable because semver-minor (non-breaking) releases of `sifli-hal` may major-bump (breaking) the PAC version.
@@ -76,7 +80,7 @@ log = ["dep:log"]
 ## There are no plans to make this stable.
 unstable-pac = []
 
-sf32lb52x = ["sifli-pac/sf32lb52x"]
+sf32lb52x = ["sifli-pac/sf32lb52x", "musb?/builtin-sf32lb52x"]
 
 time-driver-atim1 = ["_time-driver-atim"]
 time-driver-gptim1 = ["_time-driver-gptim"]
