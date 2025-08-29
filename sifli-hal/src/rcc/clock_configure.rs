@@ -1,3 +1,5 @@
+use core::sync::atomic::{compiler_fence, Ordering};
+
 use crate::pac::{HPSYS_RCC, HPSYS_AON, HPSYS_CFG, PMUC};
 use crate::time::Hertz;
 
@@ -88,7 +90,7 @@ pub struct UsbConfig {
     /// Select the clock source for USB
     pub sel: UsbSel,
     /// USB clock divider: USB_CLK = CLK_SYS / div
-    /// Valid range: 0 to 7
+    /// Valid range: 1 to 7
     pub div: u8,
 }
 
@@ -204,14 +206,14 @@ impl Config {
         // Configure system clock selection last
         if let ConfigOption::Update(sel) = self.clk_sys_sel {
             match sel {
-                ClkSysSel::Hrc48 => if self.get_final_hrc48_enable() {
+                ClkSysSel::Hrc48 => if !self.get_final_hrc48_enable() {
                     panic!("clk_sys_sel is Hrc48, but hrc48 is disabled")
                 },
-                ClkSysSel::Hxt48 => if self.get_final_hxt48_enable() {
+                ClkSysSel::Hxt48 => if !self.get_final_hxt48_enable() {
                     panic!("clk_sys_sel is Hxt48, but hxt48 is disabled")
                 },
                 ClkSysSel::Dbl96 => todo!(),
-                ClkSysSel::Dll1 => if self.get_final_dll1_enable() {
+                ClkSysSel::Dll1 => if !self.get_final_dll1_enable() {
                     panic!("clk_sys_sel is dll1, but dll1 is disabled")
                 } else {
                     self.config_dll1();
@@ -228,6 +230,20 @@ impl Config {
 
     fn config_dll1(&self) {
         if let ConfigOption::Update(dll1) = &self.dll1 {
+            let old_clk_sys_sel = super::get_clk_sys_source();
+            if old_clk_sys_sel == ClkSysSel::Dll1 {
+                if !dll1.enable {
+                    panic!("Disabling DLL1 while it is the current clk_sys source is not allowed");
+                }
+                // If switching away from DLL1, switch to HRC48 first
+                if super::get_hxt48_freq().is_some() {
+                    HPSYS_RCC.csr().modify(|w| w.set_sel_sys(ClkSysSel::Hxt48));
+                } else if super::get_hrc48_freq().is_some() {
+                    HPSYS_RCC.csr().modify(|w| w.set_sel_sys(ClkSysSel::Hrc48));
+                } else {
+                    panic!();
+                }
+            }
             if dll1.enable {
                 rcc_assert!(max::DLL.contains(
                     &self.get_final_dll1_freq().unwrap()
@@ -243,6 +259,8 @@ impl Config {
                         w.set_hpbg_vddpsw_en(true);
                     }
                 });
+                HPSYS_RCC.dllcr(0).modify(|w| w.set_en(false));
+                compiler_fence(Ordering::SeqCst);
                 // Enable DLL1
                 HPSYS_RCC.dllcr(0).modify(|w| {
                     w.set_en(true);
@@ -252,6 +270,10 @@ impl Config {
                 // SDK: wait for DLL ready, 5us at least
                 crate::cortex_m_blocking_delay_us(10);
                 while !HPSYS_RCC.dllcr(0).read().ready() {}
+
+                if old_clk_sys_sel == ClkSysSel::Dll1 {
+                    HPSYS_RCC.csr().modify(|w| w.set_sel_sys(ClkSysSel::Dll1));
+                }
             } else {
                 // Disable DLL1
                 HPSYS_RCC.dllcr(0).modify(|w| w.set_en(false));
@@ -261,43 +283,47 @@ impl Config {
 
     fn config_dll2(&self) {
         // Configure DLL2
-        if let ConfigOption::Update(dll2) = &self.dll2 {
-            if dll2.enable {
-                rcc_assert!(max::DLL.contains(
-                    &self.get_final_dll2_freq().unwrap()
-                ));
+        if let ConfigOption::Update(_dll2) = &self.dll2 {
+            todo!("MPI uses DLL2, so we cannot change it simply");
+            // if dll2.enable {
+            //     rcc_assert!(max::DLL.contains(
+            //         &self.get_final_dll2_freq().unwrap()
+            //     ));
 
-                let dvfs_mode = crate::pmu::dvfs::HpsysDvfsMode::from_hertz(self.get_final_hclk_freq().unwrap()).unwrap();
-                let dll2_limit = dvfs_mode.get_dll2_limit();
-                let dll2_freq = self.get_final_dll2_freq().unwrap();
-                rcc_assert!(dll2_limit >= dll2_freq, 
-                    "DLL2 frequency({}) exceeds DVFS mode {:?} limit: {}",dll2_freq.0, dvfs_mode, dll2_limit.0
-                );
+            //     let dvfs_mode = crate::pmu::dvfs::HpsysDvfsMode::from_hertz(self.get_final_hclk_freq().unwrap()).unwrap();
+            //     let dll2_limit = dvfs_mode.get_dll2_limit();
+            //     let dll2_freq = self.get_final_dll2_freq().unwrap();
+            //     rcc_assert!(dll2_limit >= dll2_freq, 
+            //         "DLL2 frequency({}) exceeds DVFS mode {:?} limit: {}",dll2_freq.0, dvfs_mode, dll2_limit.0
+            //     );
 
-                PMUC.hxt_cr1().modify(|w| w.set_buf_dll_en(true));
+            //     PMUC.hxt_cr1().modify(|w| w.set_buf_dll_en(true));
 
-                HPSYS_CFG.cau2_cr().modify(|w| {
-                    if !w.hpbg_en() { // SDK does this check, but it's not clear why
-                        w.set_hpbg_en(true);
-                    }
-                    if !w.hpbg_vddpsw_en() {
-                        w.set_hpbg_vddpsw_en(true);
-                    }
-                });
+            //     HPSYS_CFG.cau2_cr().modify(|w| {
+            //         if !w.hpbg_en() { // SDK does this check, but it's not clear why
+            //             w.set_hpbg_en(true);
+            //         }
+            //         if !w.hpbg_vddpsw_en() {
+            //             w.set_hpbg_vddpsw_en(true);
+            //         }
+            //     });
 
-                // Enable DLL2
-                HPSYS_RCC.dllcr(1).modify(|w| {
-                    w.set_en(true);
-                    w.set_stg(dll2.stg);
-                    w.set_out_div2_en(dll2.div2);
-                });
-                // SDK: wait for DLL ready, 5us at least
-                crate::cortex_m_blocking_delay_us(10);
-                while !HPSYS_RCC.dllcr(1).read().ready() {}
-            } else {
-                // Disable DLL1
-                HPSYS_RCC.dllcr(1).modify(|w| w.set_en(false));
-            }
+            //     HPSYS_RCC.dllcr(1).modify(|w| w.set_en(false));
+            //     compiler_fence(Ordering::SeqCst);
+            //     // Enable DLL2
+            //     HPSYS_RCC.dllcr(1).modify(|w| {
+            //         w.set_stg(dll2.stg);
+            //         w.set_in_div2_en(true);
+            //         w.set_out_div2_en(dll2.div2);
+            //         w.set_en(true);
+            //     });
+            //     // SDK: wait for DLL ready, 5us at least
+            //     crate::cortex_m_blocking_delay_us(10);
+            //     while !HPSYS_RCC.dllcr(1).read().ready() {}
+            // } else {
+            //     // Disable DLL1
+            //     HPSYS_RCC.dllcr(1).modify(|w| w.set_en(false));
+            // }
         }
     }
 
@@ -313,17 +339,17 @@ impl Config {
         }
     }
 
-    fn get_final_dll2_freq(&self) -> Option<Hertz> {
-        if let ConfigOption::Update(dll2) = &self.dll2 {
-            if dll2.enable {
-                Some(Hertz((dll2.stg + 1) as u32 * 24_000_000 / (dll2.div2 as u32 + 1)))
-            } else {
-                None
-            }
-        } else {
-            super::get_clk_dll2_freq()
-        }
-    }
+    // fn get_final_dll2_freq(&self) -> Option<Hertz> {
+    //     if let ConfigOption::Update(dll2) = &self.dll2 {
+    //         if dll2.enable {
+    //             Some(Hertz((dll2.stg + 1) as u32 * 24_000_000 / (dll2.div2 as u32 + 1)))
+    //         } else {
+    //             None
+    //         }
+    //     } else {
+    //         super::get_clk_dll2_freq()
+    //     }
+    // }
 
     fn get_final_clk_sys_freq(&self) -> Option<Hertz> {
         match self.clk_sys_sel {

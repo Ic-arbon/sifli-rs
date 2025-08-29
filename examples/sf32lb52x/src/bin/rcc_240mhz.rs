@@ -9,7 +9,7 @@ use embassy_executor::Spawner;
 
 use sifli_hal;
 use sifli_hal::gpio;
-use sifli_hal::rcc::{self, ConfigOption, DllConfig};
+use sifli_hal::rcc::{self, ClkSysSel, ConfigOption, DllConfig};
 
 // **WARN**:
 // The RCC clock configuration module is still under construction, 
@@ -23,6 +23,7 @@ async fn main(_spawner: Spawner) {
     let mut config = sifli_hal::Config::default();
     // 240MHz Dll1 Freq = (stg + 1) * 24MHz
     config.rcc.dll1 = ConfigOption::Update(DllConfig { enable: true, stg: 9, div2: false });
+    config.rcc.clk_sys_sel = ConfigOption::Update(ClkSysSel::Dll1);
     let p = sifli_hal::init(config);
 
     rcc::test_print_clocks();
