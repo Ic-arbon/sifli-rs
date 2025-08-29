@@ -10,7 +10,7 @@
             "coreConfigs": [
                 {
                     "coreIndex": 0,
-                    "programBinary": "examples/sf32lb52x/target/thumbv8m.main-none-eabi/debug/blinky",
+                    "programBinary": "examples/sf32lb52x/target/thumbv8m.main-none-eabihf/debug/blinky",
                     "rttEnabled": true,
                     "rttChannelFormats": [
                       {
