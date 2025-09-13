@@ -9,6 +9,8 @@ use core::arch::global_asm;
 
 mod macros;
 
+mod utils;
+
 pub mod rcc;
 pub mod gpio;
 pub mod timer;
