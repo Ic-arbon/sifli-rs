@@ -5,8 +5,8 @@ use crate::pac::hpsys_pinmux::{vals, HpsysPinmux};
 use super::{AfType, InterruptTrigger};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub(crate) struct HpsysPin {
-    pub(crate) pin: u8,
+pub struct HpsysPin {
+    pub pin: u8,
 }
 
 impl HpsysPin {
@@ -25,17 +25,6 @@ impl HpsysPin {
     #[inline]
     fn bit(&self) -> u32 {
         1 << (self.pin % 32)
-    }
-
-    // Clear ISR and open drain flags
-    pub fn clear_flags(&mut self) {
-        if self.pin / 32 == 0 {
-            self.gpio().isr0().write_value(regs::Isr0(self.bit()));
-            self.gpio().iphcr0().write_value(regs::Iphcr0(self.bit()));
-        } else {  
-            self.gpio().isr1().write_value(regs::Isr1(self.bit()));
-            self.gpio().iphcr1().write_value(regs::Iphcr1(self.bit()));
-        }
     }
 
     /// Checks if an interrupt is pending by reading the ISR (Interrupt Status Register).
@@ -85,8 +74,8 @@ impl HpsysPin {
             self.gpio().iecr1().write_value(regs::Iecr1(self.bit()));
         }
 
-        // Corresponds to WAIT_ISR_DISABLED in C HAL.
-        crate::cortex_m_blocking_delay_us(1);
+        // Corresponds to WAIT_ISR_DISABLED in C HAL, except 52.
+        // crate::cortex_m_blocking_delay_us(1);
     }
 
 
@@ -149,9 +138,9 @@ impl HpsysPin {
         } else {
             if iphr {
                 self.gpio().iphsr1().write_value(regs::Iphsr1(self.bit()));
-                } else {
+            } else {
                 self.gpio().iphcr1().write_value(regs::Iphcr1(self.bit()));
-                }
+            }
             if iplr {
                 self.gpio().iplsr1().write_value(regs::Iplsr1(self.bit()));
             } else {
@@ -278,6 +267,7 @@ impl HpsysPin {
     }
 
     pub fn set_as_input(&mut self) {
+        self.set_ipr(false, false);
         self.set_ie(true);
         if self.pin / 32 == 0 {
             self.gpio().doecr0().write_value(regs::Doecr0(self.bit()));
@@ -297,13 +287,7 @@ impl HpsysPin {
 
     pub fn set_as_output_od(&mut self) {
         self.set_ie(false);
-        if self.pin / 32 == 0 {
-            self.gpio().iphsr0().write_value(regs::Iphsr0(self.bit())); 
-            self.gpio().iplsr0().write_value(regs::Iplsr0(self.bit()));
-        } else {
-            self.gpio().iphsr1().write_value(regs::Iphsr1(self.bit()));
-            self.gpio().iplsr1().write_value(regs::Iplsr1(self.bit()));
-        }
+        self.set_ipr(true, true);
     }
 
     pub fn set_as_analog(&mut self) {

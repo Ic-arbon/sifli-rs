@@ -17,7 +17,7 @@ use crate::utils::BitIter64;
 #[cfg(any(feature = "sf32lb52x"))]
 pub(crate) const PA_PIN_COUNT: usize = 44;
 
-pub(crate) mod hpsys;
+pub mod hpsys;
 
 static PA_WAKERS: [AtomicWaker; PA_PIN_COUNT] = [const { AtomicWaker::new() }; PA_PIN_COUNT];
 
@@ -98,8 +98,9 @@ impl<'d> Input<'d> {
     #[inline]
     pub fn new(pin: impl Peripheral<P = impl Pin> + 'd, pull: Pull) -> Self {
         let mut pin = Flex::new(pin);
-        pin.set_as_input();
         pin.set_pull(pull);
+        pin.set_as_input();
+        
         Self { pin }
     }
 
@@ -194,7 +195,7 @@ fn irq_handler<const N: usize>(wakers: &[AtomicWaker; N]) {
     // Read both interrupt status registers
     let isr0 = gpio.isr0().read().0;
     let isr1 = gpio.isr1().read().0;
-    trace!("gpio irq: isr0={:x} isr1={:x}", isr0, isr1);
+    // trace!("gpio irq: isr0={:x} isr1={:x}", isr0, isr1);
     
     // Combine into a single 64-bit status for easier iteration
     let status = (isr1 as u64) << 32 | isr0 as u64;
@@ -206,22 +207,22 @@ fn irq_handler<const N: usize>(wakers: &[AtomicWaker; N]) {
     for pin_idx in BitIter64(status) {
         let mut pin = HpsysPin::new(pin_idx);
 
-            // Disable the interrupt for this pin to prevent re-firing.
-            // The future will re-enable it on the next await.
-            pin.disable_interrupt();
+        // Disable the interrupt for this pin to prevent re-firing.
+        // The future will re-enable it on the next await.
+        pin.disable_interrupt();
 
-            // Clear the interrupt flag.
-            pin.clear_interrupt();
-            
-            // TODO: The C HAL implementation (`HAL_GPIO_EXTI_IRQHandler`) includes logic
-            // to clear the corresponding AON (Always-On) Wakeup Source Register (WSR)
-            // if a GPIO pin is also configured as a wakeup pin. This is important for
-            // low-power sleep/wakeup functionality.
-            // This implementation omits that step as it requires a mapping from GPIO
-            // pins to AON wakeup pins and access to AON registers, which is beyond
-            // the scope of a plain GPIO interrupt handler. If you use GPIO interrupts
-            // to wake the system from sleep, you may need to add this logic manually
-            // by calling `HAL_HPAON_CLEAR_WSR` or its Rust equivalent.
+        // Clear the interrupt flag.
+        pin.clear_interrupt();
+        
+        // TODO: The C HAL implementation (`HAL_GPIO_EXTI_IRQHandler`) includes logic
+        // to clear the corresponding AON (Always-On) Wakeup Source Register (WSR)
+        // if a GPIO pin is also configured as a wakeup pin. This is important for
+        // low-power sleep/wakeup functionality.
+        // This implementation omits that step as it requires a mapping from GPIO
+        // pins to AON wakeup pins and access to AON registers, which is beyond
+        // the scope of a plain GPIO interrupt handler. If you use GPIO interrupts
+        // to wake the system from sleep, you may need to add this logic manually
+        // by calling `HAL_HPAON_CLEAR_WSR` or its Rust equivalent.
 
         wakers[pin_idx as usize].wake();
     }
@@ -294,10 +295,7 @@ impl<'d> Output<'d> {
     #[inline]
     pub fn new(pin: impl Peripheral<P = impl Pin> + 'd, initial_output: Level) -> Self {
         let mut pin = Flex::new(pin);
-        match initial_output {
-            Level::High => pin.set_high(),
-            Level::Low => pin.set_low(),
-        }
+        pin.set_level(initial_output);
 
         pin.set_as_output();
         Self { pin }
@@ -368,9 +366,10 @@ impl<'d> OutputOpenDrain<'d> {
     #[inline]
     pub fn new(pin: impl Peripheral<P = impl Pin> + 'd, initial_output: Level) -> Self {
         let mut pin = Flex::new(pin);
+        // SET_OPEN_DRAIN_FLAG
         pin.set_low();
 
-        pin.inner.set_ipr(true, true);
+        pin.set_as_output_od();
 
         pin.set_level(initial_output);
         Self { pin }
@@ -533,7 +532,7 @@ impl<'d> Flex<'d> {
         flex
     }
 
-    pub unsafe fn new_without_init(pin: impl Peripheral<P = impl Pin> + 'd) -> Self {
+    pub fn new_without_init(pin: impl Peripheral<P = impl Pin> + 'd) -> Self {
         into_ref!(pin);
         Self {
             inner: HpsysPin::new(pin.pin_bank()),
@@ -543,7 +542,7 @@ impl<'d> Flex<'d> {
 
     pub fn disable_interrupt(&mut self) {
         self.inner.disable_interrupt();
-        self.inner.clear_flags();
+        self.inner.clear_interrupt();
     }
 
     /// Configure pin as output
@@ -728,9 +727,10 @@ pub(crate) trait SealedPin: Sized {
     fn set_as_disconnected(&self) {
         let mut pin = HpsysPin::new(self.pin_bank());
         pin.disable_interrupt();
-        pin.clear_flags();
+        pin.clear_interrupt();
+        pin.set_ipr(false, false);
         unsafe { pin.set_fsel_unchecked(0) };
-        pin.set_ie(false);
+        // pin.set_ie(false);
         pin.set_drive_strength(Drive::Drive0);
         pin.set_pull(Pull::None);
     }
