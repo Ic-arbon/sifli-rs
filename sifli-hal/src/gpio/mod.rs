@@ -11,10 +11,11 @@ use hpsys::HpsysPin;
 
 use crate::interrupt::InterruptExt;
 use crate::{interrupt, peripherals, Peripheral};
+use crate::utils::BitIter64;
 
 // TODO: move this const to _generated.rs
 #[cfg(any(feature = "sf32lb52x"))]
-pub(crate) const PA_PIN_COUNT: usize = 30;
+pub(crate) const PA_PIN_COUNT: usize = 44;
 
 pub(crate) mod hpsys;
 
@@ -179,45 +180,51 @@ pub(crate) unsafe fn init(gpio1_it_priority: interrupt::Priority) {
         interrupt::GPIO1.set_priority(gpio1_it_priority);
         interrupt::GPIO1.enable();
     }
-    crate::rcc::enable_and_reset::<peripherals::HPSYS_GPIO>();
+    crate::rcc::enable::<peripherals::HPSYS_GPIO>();
 
-    // We should not reset PINMUX here, otherwise the pins used for PSRAM 
-    // or FLASH will be invalid. 
+    // We should not reset PINMUX here, otherwise the pins used for PSRAM
+    // or FLASH will be invalid.
     // PINMUX is already turned on in the bootloader.
-    // crate::rcc::enable_and_reset_with_cs::<peripherals::HPSYS_PINMUX>(cs);
 }
 
 #[cfg(feature = "rt")]
-fn irq_handler<const N: usize>(_wakers: &[AtomicWaker; N]) {
-    // let cpu = SIO.cpuid().read() as usize;
-    // // There are two sets of interrupt registers, one for cpu0 and one for cpu1
-    // // and here we are selecting the set that belongs to the currently executing
-    // // cpu.
-    // let proc_intx: pac::io::Int = bank.int_proc(cpu);
-    // for pin in 0..N {
-    //     // There are 4 raw interrupt status registers, PROCx_INTS0, PROCx_INTS1,
-    //     // PROCx_INTS2, and PROCx_INTS3, and we are selecting the one that the
-    //     // current pin belongs to.
-    //     let intsx = proc_intx.ints(pin / 8);
-    //     // The status register is divided into groups of four, one group for
-    //     // each pin. Each group consists of four trigger levels LEVEL_LOW,
-    //     // LEVEL_HIGH, EDGE_LOW, and EDGE_HIGH for each pin.
-    //     let pin_group = pin % 8;
-    //     let event = (intsx.read().0 >> (pin_group * 4)) & 0xf;
+fn irq_handler<const N: usize>(wakers: &[AtomicWaker; N]) {
+    let gpio = crate::pac::HPSYS_GPIO;
 
-    //     // no more than one event can be awaited per pin at any given time, so
-    //     // we can just clear all interrupt enables for that pin without having
-    //     // to check which event was signalled.
-    //     if event != 0 {
-    //         proc_intx.inte(pin / 8).write_clear(|w| {
-    //             w.set_edge_high(pin_group, true);
-    //             w.set_edge_low(pin_group, true);
-    //             w.set_level_high(pin_group, true);
-    //             w.set_level_low(pin_group, true);
-    //         });
-    //         wakers[pin].wake();
-    //     }
-    // }
+    // Read both interrupt status registers
+    let isr0 = gpio.isr0().read().0;
+    let isr1 = gpio.isr1().read().0;
+    trace!("gpio irq: isr0={:x} isr1={:x}", isr0, isr1);
+    
+    // Combine into a single 64-bit status for easier iteration
+    let status = (isr1 as u64) << 32 | isr0 as u64;
+
+    if status == 0 {
+        return;
+    }
+
+    for pin_idx in BitIter64(status) {
+        let mut pin = HpsysPin::new(pin_idx);
+
+            // Disable the interrupt for this pin to prevent re-firing.
+            // The future will re-enable it on the next await.
+            pin.disable_interrupt();
+
+            // Clear the interrupt flag.
+            pin.clear_interrupt();
+            
+            // TODO: The C HAL implementation (`HAL_GPIO_EXTI_IRQHandler`) includes logic
+            // to clear the corresponding AON (Always-On) Wakeup Source Register (WSR)
+            // if a GPIO pin is also configured as a wakeup pin. This is important for
+            // low-power sleep/wakeup functionality.
+            // This implementation omits that step as it requires a mapping from GPIO
+            // pins to AON wakeup pins and access to AON registers, which is beyond
+            // the scope of a plain GPIO interrupt handler. If you use GPIO interrupts
+            // to wake the system from sleep, you may need to add this logic manually
+            // by calling `HAL_HPAON_CLEAR_WSR` or its Rust equivalent.
+
+        wakers[pin_idx as usize].wake();
+    }
 }
 
 #[cfg(feature = "rt")]
@@ -226,54 +233,54 @@ fn GPIO1() {
     irq_handler(&PA_WAKERS);
 }
 
-
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 struct InputFuture<'d> {
-    _pin: PeripheralRef<'d, AnyPin>,
+    pin: PeripheralRef<'d, AnyPin>,
 }
 
 impl<'d> InputFuture<'d> {
-    fn new(_pin: PeripheralRef<'d, AnyPin>, _level: InterruptTrigger) -> Self {
-        todo!();
-        // Self { _pin }
+    fn new(pin: PeripheralRef<'d, AnyPin>, trigger: InterruptTrigger) -> Self {
+        let mut hpsys_pin = HpsysPin::new(pin.pin_bank());
+        // Configure the hardware for the desired interrupt.
+        hpsys_pin.set_interrupt_trigger(trigger);
+        // Clear any pending interrupt flags before we start waiting.
+        hpsys_pin.clear_interrupt();
+        // Enable the interrupt.
+        hpsys_pin.enable_interrupt();
+
+        //
+        hpsys_pin.set_high();
+        Self { pin }
+    }
+}
+
+impl<'d> Drop for InputFuture<'d> {
+    fn drop(&mut self) {
+        // When the future is dropped, disable the interrupt for the pin
+        // to prevent stray interrupts.
+        // let mut pin = HpsysPin::new(self.pin.pin_bank());
+        // pin.disable_interrupt();
+        // pin.clear_interrupt();
     }
 }
 
 impl<'d> Future for InputFuture<'d> {
     type Output = ();
 
-    fn poll(self: FuturePin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // // We need to register/re-register the waker for each poll because any
-        // // calls to wake will deregister the waker.
-        // let waker = match self.pin.bank() {
-        //     Bank::Bank0 => &BANK0_WAKERS[self.pin.pin() as usize],
-        //     #[cfg(feature = "qspi-as-gpio")]
-        //     Bank::Qspi => &QSPI_WAKERS[self.pin.pin() as usize],
-        // };
-        // waker.register(cx.waker());
+    fn poll(self: FuturePin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let pin_idx = self.pin.pin() as usize;
+        let hpsys_pin = HpsysPin::new(self.pin.pin_bank());
 
-        // // self.int_proc() will get the register offset for the current cpu,
-        // // then we want to access the interrupt enable register for our
-        // // pin (there are 4 of these PROC0_INTE0, PROC0_INTE1, PROC0_INTE2, and
-        // // PROC0_INTE3 per cpu).
-        // let inte: pac::io::regs::Int = self.pin.int_proc().inte((self.pin.pin() / 8) as usize).read();
-        // // The register is divided into groups of four, one group for
-        // // each pin. Each group consists of four trigger levels LEVEL_LOW,
-        // // LEVEL_HIGH, EDGE_LOW, and EDGE_HIGH for each pin.
-        // let pin_group = (self.pin.pin() % 8) as usize;
+        // Register the waker.
+        PA_WAKERS[pin_idx].register(cx.waker());
 
-        // // since the interrupt handler clears all INTE flags we'll check that
-        // // all have been cleared and unconditionally return Ready(()) if so.
-        // // we don't need further handshaking since only a single event wait
-        // // is possible for any given pin at any given time.
-        // if !inte.edge_high(pin_group)
-        //     && !inte.edge_low(pin_group)
-        //     && !inte.level_high(pin_group)
-        //     && !inte.level_low(pin_group)
-        // {
-        //     return Poll::Ready(());
-        // }
-        Poll::Pending
+        // Check if the interrupt has already fired since we registered the waker.
+        // The ISR will clear the IER bit, so if it's clear, we know it fired.
+        if hpsys_pin.is_interrupt_disabled() {
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
     }
 }
 
@@ -362,10 +369,10 @@ impl<'d> OutputOpenDrain<'d> {
     pub fn new(pin: impl Peripheral<P = impl Pin> + 'd, initial_output: Level) -> Self {
         let mut pin = Flex::new(pin);
         pin.set_low();
-        match initial_output {
-            Level::High => pin.set_as_input(),
-            Level::Low => pin.set_as_output(),
-        }
+
+        pin.inner.set_ipr(true, true);
+
+        pin.set_level(initial_output);
         Self { pin }
     }
 
@@ -642,12 +649,18 @@ impl<'d> Flex<'d> {
     /// Wait until the pin is high. If it is already high, return immediately.
     #[inline]
     pub async fn wait_for_high(&mut self) {
+        if self.is_high() {
+            return;
+        }
         InputFuture::new(self.pin.reborrow(), InterruptTrigger::LevelHigh).await;
     }
 
     /// Wait until the pin is low. If it is already low, return immediately.
     #[inline]
     pub async fn wait_for_low(&mut self) {
+        if self.is_low() {
+            return;
+        }
         InputFuture::new(self.pin.reborrow(), InterruptTrigger::LevelLow).await;
     }
 
@@ -717,6 +730,9 @@ pub(crate) trait SealedPin: Sized {
         pin.disable_interrupt();
         pin.clear_flags();
         unsafe { pin.set_fsel_unchecked(0) };
+        pin.set_ie(false);
+        pin.set_drive_strength(Drive::Drive0);
+        pin.set_pull(Pull::None);
     }
 
     #[inline]

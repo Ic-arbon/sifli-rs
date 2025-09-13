@@ -34,6 +34,26 @@ pub trait RccGetFreq: SealedRccGetFreq + 'static {
     }
 }
 
+/// Enables peripheral `T`.
+///
+/// # Safety
+///
+/// Peripheral must not be in use.
+// TODO: should this be `unsafe`?
+pub fn enable_with_cs<T: RccEnableReset>(_cs: CriticalSection) {
+    T::rcc_enable();
+}
+
+/// Enables peripheral `T`.
+///
+/// # Safety
+///
+/// Peripheral must not be in use.
+// TODO: should this be `unsafe`?
+pub fn enable<T: RccEnableReset>() {
+    critical_section::with(|cs| enable_with_cs::<T>(cs));
+}
+
 /// Enables and resets peripheral `T`.
 ///
 /// # Safety
