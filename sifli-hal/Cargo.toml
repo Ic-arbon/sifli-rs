@@ -46,6 +46,7 @@ embedded-io = { version = "0.6.1" }
 embedded-io-async = { version = "0.6.1" }
 embedded-storage = { version = "0.3" }
 embedded-storage-async = { version = "0.4.1" }
+portable-atomic = { version = "1.11.1", features = ["require-cas"] }
 
 [build-dependencies]
 serde = { version = "1.0", features = ["derive"] }

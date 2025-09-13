@@ -45,360 +45,197 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
     <li>➕: Async异步</li>
   </ul>
 </div>
-<table style="border-collapse: collapse; width: 100%;">
-  <thead>
-    <tr style="text-align: center;">
-      <th style="border: 1px solid #ddd; padding: 8px;" rowspan="2">Peripheral</th>
-      <th style="border: 1px solid #ddd; padding: 8px;" rowspan="2">Feature</th>
-      <th style="border: 1px solid #ddd; padding: 8px;" colspan="2">sf32lb52x</th>
-      <th style="border: 1px solid #ddd; padding: 8px;" rowspan="2">56x</th>
-      <th style="border: 1px solid #ddd; padding: 8px;" rowspan="2">58x</th>
-    </tr>
-    <tr style="text-align: center;">
-      <th style="border: 1px solid #ddd; padding: 8px;">hcpu</th>
-      <th style="border: 1px solid #ddd; padding: 8px;">lcpu</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" colspan="2"><strong>PAC (Peripheral Access Crate)</strong></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">🌗</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" colspan="2"><strong>Startup & Interrupt</strong></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" colspan="2"><strong>Flash Table</strong></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">🌗</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" rowspan="3"><strong><a href="https://github.com/embassy-rs/embassy">embassy</a></strong></td>
-      <td style="border: 1px solid #ddd; padding: 8px;">GPTIM Time Driver</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">ATIM Time Driver</td>
-        <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><a href="https://github.com/OpenSiFli/sifli-rs/issues/5">(#5)</a></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">Embassy Peripheral Singleton</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" rowspan="4"><strong>RCC</strong></td>
-      <td style="border: 1px solid #ddd; padding: 8px;">Peripheral RCC Codegen (enable, freq...)</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">Read current RCC tree</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">RCC tree Configure</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">🌗</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">Modify frequency in same DVFS mode</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" rowspan="4"><strong>GPIO</strong></td>
-      <td style="border: 1px solid #ddd; padding: 8px;">Blinky</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">PinMux Codegen & AF Config</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">IO Mode & AonPE Config</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">🌗</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">EXTI ➕</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" rowspan="4"><strong>USART</strong></td>
-      <td style="border: 1px solid #ddd; padding: 8px;">Blocking</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">Buffered(Interrupt) ➕</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">DMA ➕</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">RingBuffered(DMA) ➕</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">❓</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" rowspan="3"><strong>DMA</strong></td>
-      <td style="border: 1px solid #ddd; padding: 8px;">Transfer(P2M, M2P)</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">RingBuffer</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">❓</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">ExtDMA</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" rowspan="3"><strong>USB<br>(see also:<a href="https://github.com/decaday/musb">musb</a>)</strong></td>
-      <td style="border: 1px solid #ddd; padding: 8px;"><a href="https://crates.io/crates/embassy-usb">embassy-usb</a> ➕</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">Device: HID, CDC_ACM ...</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">HOST / OTG</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" rowspan="8"><strong>GPADC</strong></td>
-      <td style="border: 1px solid #ddd; padding: 8px;">Blocking</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">Interrupt ➕</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">Timer Trigger</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">VBAT & External Channel</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">Multi Channel & Slot</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">Differential Input</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">DMA ➕</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">Calibration</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" rowspan="4"><strong>PMU</strong></td>
-      <td style="border: 1px solid #ddd; padding: 8px;">DVFS Upscale</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">✅</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">DVFS Downscale</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">Charge Modoule</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">Buck & LDO</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">🌗</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" rowspan="4"><strong>Audio</strong></td>
-      <td style="border: 1px solid #ddd; padding: 8px;">AudCodec/ADC, DAC</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">AudPrc/Channel, Mixer, Volume</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">I2S/DMA, Master, Slave</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;">PDM</td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" colspan="2"><strong>I2C</strong></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" colspan="2"><strong>SPI</strong></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" colspan="2"><strong>Mailbox</strong></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" colspan="2"><strong>BT</strong></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" colspan="2"><strong>BLE</strong></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" colspan="2"><strong>LCDC/Layer, SPI, DBI</strong></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 8px;" colspan="2"><strong>ePicasso</strong></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-      <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
-    </tr>
-  </tbody>
+<table style="border-collapse: collapse; width: 80%;font-size: small;padding: 4px 8px;">
+    <thead>
+        <tr>
+            <th rowspan="2" style="la">Peripheral</th>
+            <th rowspan="2">Feature</th>
+            <th colspan="1">sf32lb52x</th>
+            <th rowspan="2">56x</th>
+            <th rowspan="2">58x</th>
+        </tr>
+        <tr>
+            <th>hcpu</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td colspan="2"><strong>PAC (Peripheral Access Crate)</strong></td>
+            <td>🌗</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td colspan="2"><strong>Startup & Interrupt</strong></td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td colspan="2"><strong>Flash Table</strong></td>
+            <td>🌗</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td rowspan="3"><strong><a href="https://github.com/embassy-rs/embassy">embassy</a></strong></td>
+            <td>GPTIM Time Driver</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>ATIM Time Driver</td>
+            <td><a href="https://github.com/OpenSiFli/sifli-rs/issues/5">(#5)</a></td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>Embassy Peripheral Singleton</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td rowspan="4"><strong>RCC</strong></td>
+            <td>Peripheral RCC Codegen (enable, freq...)</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>Read current RCC tree</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>RCC tree Configure</td>
+            <td>🌗</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>Modify frequency in same DVFS mode</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td rowspan="4"><strong>GPIO</strong></td>
+            <td>Blinky</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>PinMux Codegen & AF Config</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>IO Mode & AonPE Config</td>
+            <td>🌗</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>EXTI ➕</td><td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td rowspan="4"><strong>USART</strong></td>
+            <td>Blocking</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>Buffered(Interrupt) ➕</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>DMA ➕</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>RingBuffered(DMA) ➕</td>
+            <td>❓</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td rowspan="3"><strong>DMA</strong></td>
+            <td>Transfer(P2M, M2P)</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>RingBuffer</td>
+            <td>❓</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>ExtDMA</td><td></td><td></td><td></td>
+        </tr>
+        <tr>
+            <td rowspan="3"><strong>USB<br>(see also:<a href="https://github.com/decaday/musb">musb</a>)</strong></td>
+            <td><a href="https://crates.io/crates/embassy-usb">embassy-usb</a> ➕</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>Device: HID, CDC_ACM ...</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>HOST / OTG</td><td></td><td></td><td></td>
+        </tr>
+        <tr>
+            <td rowspan="8"><strong>GPADC</strong></td>
+            <td>Blocking</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>Interrupt ➕</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>Timer Trigger</td><td></td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>VBAT & External Channel</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>Multi Channel & Slot</td><td></td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>Differential Input</td><td></td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>DMA ➕</td><td></td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>Calibration</td><td></td><td></td><td></td>
+        </tr>
+        <tr>
+            <td rowspan="4"><strong>PMU</strong></td>
+            <td>DVFS Upscale</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>DVFS Downscale</td><td></td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>Charge Modoule</td><td></td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>Buck & LDO</td>
+            <td>🌗</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td rowspan="4"><strong>Audio</strong></td>
+            <td>AudCodec/ADC, DAC</td><td></td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>AudPrc/Channel, Mixer, Volume</td><td></td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>I2S/DMA, Master, Slave</td><td></td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>PDM</td><td></td><td></td><td></td>
+        </tr>
+        <tr>
+            <td colspan="2"><strong>I2C</strong></td><td></td><td></td><td></td>
+        </tr>
+        <tr>
+            <td colspan="2"><strong>SPI</strong></td><td></td><td></td><td></td>
+        </tr>
+        <tr>
+            <td colspan="2"><strong>Mailbox</strong></td><td></td><td></td><td></td>
+        </tr>
+        <tr>
+            <td colspan="2"><strong>BT</strong></td><td></td><td></td><td></td>
+        </tr>
+        <tr>
+            <td colspan="2"><strong>BLE</strong></td><td></td><td></td><td></td>
+        </tr>
+        <tr>
+            <td colspan="2"><strong>LCDC/Layer, SPI, DBI</strong></td><td></td><td></td><td></td>
+        </tr>
+        <tr>
+            <td colspan="2"><strong>ePicasso</strong></td><td></td><td></td><td></td>
+        </tr>
+    </tbody>
 </table>
 </details>
 
