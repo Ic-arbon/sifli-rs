@@ -1,11 +1,16 @@
 //! USB HID keyboard example
 //!
-//! For some computers/hosts, power on first and wait for the bootloader to finish 
-//! (at least 3s) before plugging in the USB cable.  
-//! Some hosts may misidentify the chip running the bootloader as a USB device 
-//! (even though the PHY is not enabled) and try enumeration. 
-//! After multiple failures, they stop retrying, causing the device to be unrecognized.  
-//! The same issue exists in SiFli-SDK examples.
+//! If device enumeration fails, try powering on first and wait for the
+//! bootloader to finish (at least 3s) before plugging in the USB cable,
+//! and check whether DP has an external pull-up resistor, then remove it.
+//!
+//! SF32LB52-DevKit-LCD-v1.2 and earlier versions incorrectly placed a
+//! pull-up resistor on DP, causing the HOST (computer) to attempt
+//! enumeration during the bootloader stage. Some hosts stop retrying
+//! after 4 reset attempts and report an unrecognized device error, while
+//! others keep retrying until enumeration eventually succeeds.
+//!
+//! This issue is unrelated to the software (SiFli-rs).
 
 #![no_std]
 #![no_main]
@@ -31,7 +36,7 @@ bind_interrupts!(struct Irqs {
 // you can use `arch-spin` instead of `arch-cortex-m` in embassy-executor's
 // feature by setting `entry="cortex_m_rt::entry"`.
 // This Will NOT enter Wfi during executor idle.
-#[embassy_executor::main(entry="cortex_m_rt::entry")]
+#[embassy_executor::main]
 async fn main(spawner: Spawner) {
     info!("Hello World! USB HID TEST");
     let mut config = sifli_hal::Config::default();

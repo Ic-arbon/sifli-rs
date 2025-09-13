@@ -1,11 +1,16 @@
 //! USB HID keyboard example
 //!
-//! For some computers/hosts, power on first and wait for the bootloader to finish 
-//! (at least 3s) before plugging in the USB cable.  
-//! Some hosts may misidentify the chip running the bootloader as a USB device 
-//! (even though the PHY is not enabled) and try enumeration. 
-//! After multiple failures, they stop retrying, causing the device to be unrecognized.  
-//! The same issue exists in SiFli-SDK examples.
+//! If device enumeration fails, try powering on first and wait for the
+//! bootloader to finish (at least 3s) before plugging in the USB cable,
+//! and check whether DP has an external pull-up resistor, then remove it.
+//!
+//! SF32LB52-DevKit-LCD-v1.2 and earlier versions incorrectly placed a
+//! pull-up resistor on DP, causing the HOST (computer) to attempt
+//! enumeration during the bootloader stage. Some hosts stop retrying
+//! after four reset attempts and report an unrecognized device, while
+//! others keep retrying until enumeration eventually succeeds.
+//!
+//! This issue is unrelated to the software (SiFli-rs).
 
 #![no_std]
 #![no_main]
@@ -22,7 +27,7 @@ use embassy_usb::control::OutResponse;
 use embassy_usb::{Builder, Handler};
 use usbd_hid::descriptor::{KeyboardReport, SerializedDescriptor};
 
-use sifli_hal::bind_interrupts;
+use sifli_hal::{bind_interrupts, gpio::{Input, Pull}};
 use sifli_hal::rcc::{ClkSysSel, ConfigOption, DllConfig, UsbConfig, UsbSel};
 use sifli_hal::usb::{Driver, InterruptHandler};
 
@@ -33,7 +38,7 @@ bind_interrupts!(struct Irqs {
 // you can use `arch-spin` instead of `arch-cortex-m` in embassy-executor's
 // feature by setting `entry="cortex_m_rt::entry"`.
 // This Will NOT enter Wfi during executor idle.
-#[embassy_executor::main(entry="cortex_m_rt::entry")]
+#[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     info!("Hello World! USB HID TEST");
     let mut config = sifli_hal::Config::default();
@@ -105,13 +110,13 @@ async fn main(_spawner: Spawner) {
 
     let (reader, mut writer) = hid.split();
 
-    // let mut button = ExtiInput::new(p.PB0, p.EXTI0, Pull::Up);
+    // SF32LB52-DevKit-LCD KEY2 pin, with a pull down resister on the board
+    let mut button = Input::new(p.PA11, Pull::None);
     
     // Do stuff with the class!
     let in_fut = async {
         loop {
-            embassy_time::Timer::after_secs(1).await;
-            // button.wait_for_falling_edge().await;
+            button.wait_for_rising_edge().await;
             info!("Button pressed!");
             // Create a report with the A key pressed. (no shift modifier)
             let report = KeyboardReport {
@@ -126,8 +131,8 @@ async fn main(_spawner: Spawner) {
                 Err(e) => warn!("Failed to send report: {:?}", e),
             };
 
-            embassy_time::Timer::after_millis(300).await;
-            // button.wait_for_rising_edge().await;
+            button.wait_for_falling_edge().await;
+
             info!("Button released!");
             let report = KeyboardReport {
                 keycodes: [0, 0, 0, 0, 0, 0],
