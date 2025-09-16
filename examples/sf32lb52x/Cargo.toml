@@ -4,7 +4,7 @@ version = "0.0.0"
 edition = "2021"
 
 [dependencies]
-sifli-hal = { path = "../../sifli-hal", features = ["sf32lb52x", "defmt", "unstable-pac", "usb"] }
+sifli-hal = { path = "../../sifli-hal", features = ["sf32lb52x", "defmt", "unstable-pac", "usb", "time-driver-gptim2"] }
 
 cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }
 cortex-m-rt = { version = "0.7.3", features = ["set-sp", "set-vtor"] }
@@ -23,6 +23,7 @@ embedded-io-async = { version = "0.6.1" }
 defmt = "1"
 defmt-rtt = "1"
 heapless = "0.9"
-embassy-usb = { version="0.4.0", features = ["defmt"] }
+embassy-usb = { version="0.5", features = ["defmt"] }
 usbd-hid = { version="0.8", features = ["defmt"] }
 static_cell = "2.1.1"
+portable-atomic = "1.11.1"

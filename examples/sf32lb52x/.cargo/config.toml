@@ -12,3 +12,4 @@ target = "thumbv8m.main-none-eabihf"
 
 [env]
 DEFMT_LOG = "info"
+SIFLI_UART_DEBUG = "1"

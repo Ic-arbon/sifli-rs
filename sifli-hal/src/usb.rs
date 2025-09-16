@@ -3,7 +3,7 @@
 /// See more: https://github.com/decaday/musb
 use core::marker::PhantomData;
 
-use embassy_usb_driver::{self as driver, EndpointType};
+use embassy_usb_driver::{self as driver, EndpointAddress, EndpointType};
 use musb::MusbInstance;
 use musb::{Bus, ControlPipe, Endpoint, In, MusbDriver, Out, UsbInstance};
 
@@ -116,21 +116,23 @@ impl<'d, T: Instance> driver::Driver<'d> for Driver<'d, T> {
     fn alloc_endpoint_in(
         &mut self,
         ep_type: EndpointType,
+        ep_addr: Option<EndpointAddress>,
         max_packet_size: u16,
         interval_ms: u8,
     ) -> Result<Self::EndpointIn, driver::EndpointAllocError> {
         self.inner
-            .alloc_endpoint(ep_type, max_packet_size, interval_ms, None)
+            .alloc_endpoint(ep_type, ep_addr, max_packet_size, interval_ms)
     }
 
     fn alloc_endpoint_out(
         &mut self,
         ep_type: EndpointType,
+        ep_addr: Option<EndpointAddress>,
         max_packet_size: u16,
         interval_ms: u8,
     ) -> Result<Self::EndpointOut, driver::EndpointAllocError> {
         self.inner
-            .alloc_endpoint(ep_type, max_packet_size, interval_ms, None)
+            .alloc_endpoint(ep_type, ep_addr, max_packet_size, interval_ms)
     }
 
     fn start(
