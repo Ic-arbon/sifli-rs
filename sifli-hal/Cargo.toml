@@ -1,6 +1,6 @@
 [package]
 name = "sifli-hal"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Hardware Abstraction Layer (HAL) for SiFli MCUs"
 categories = ["hardware-support", "embedded", "no-std"]
@@ -13,7 +13,7 @@ license = "Apache-2.0"
 
 [dependencies]
 # sifli-pac = { version = "0.1.0", path = "../../sifli-pac" }
-sifli-pac = { git = "https://github.com/OpenSiFli/sifli-pac" }
+sifli-pac = { version = "0.2.0", git = "https://github.com/OpenSiFli/sifli-pac" }
 
 embassy-sync = { version = "0.7" }
 embassy-time-driver = { version = "0.2", optional = true }
@@ -58,7 +58,7 @@ syn = "2.0"
 
 [features]
 # default = ["rt"]
-default = ["rt", "defmt", "time", "set-msplim", "usb", "sf32lb52x"]
+default = ["rt", "time", "defmt", "set-msplim", "usb", "sf32lb52x"]
 
 rt = ["sifli-pac/rt"]
 time = ["embassy-time"]

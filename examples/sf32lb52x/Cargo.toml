@@ -1,10 +1,11 @@
 [package]
 name = "sifli-hal-examples-sf32lb52x"
-version = "0.0.0"
+version = "0.1.1"
 edition = "2021"
+publish = false
 
 [dependencies]
-sifli-hal = { path = "../../sifli-hal", features = ["sf32lb52x", "defmt", "unstable-pac", "usb", "time-driver-gptim2"] }
+sifli-hal = { version = "0.1.1", path = "../../sifli-hal", features = ["sf32lb52x", "defmt", "unstable-pac", "usb", "time-driver-gptim2"] }
 
 cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }
 cortex-m-rt = { version = "0.7.3", features = ["set-sp", "set-vtor"] }
