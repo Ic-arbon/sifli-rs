@@ -49,6 +49,8 @@
 
 [入门指南](docs/get_started.md)
 
+[Nix开发环境部署补充说明](/docs/dev_env_nix.md)
+
 [sifli-hal](sifli-hal/README.md) (可以在这里看到芯片和外设的支持状态)
 
 [例程](examples)

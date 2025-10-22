@@ -14,6 +14,8 @@ You can find the prepared ftab.bin [here](examples\sf32lb52x), which is generate
 
 ### SFTool (Available on Linux, Mac and Windows)
 
+If you enter the repository with `nix develop` (see [docs/dev_env_nix.md](dev_env_nix.md)), the `sftool` binary is already on the `PATH`. Otherwise install it manually following the upstream instructions.
+
 Linux/Mac:
 
 ```bash
@@ -169,4 +171,3 @@ In certain HardFault scenarios, the Cortex-Debug connection may be interrupted. 
 If your debugging process is unstable, this may be due to Embassy  using WFI during idle task execution.  
 
 You can try modifying the `embassy-executor` crate's `arch-cortex-m`  feature in `example/sf32lb52x/Cargo.toml` to `arch-spin`, update the `#[embassy_executor::main]` attribute on the `main` function to `#[embassy_executor::main(entry = "cortex_m_rt::entry")]`.  This prevents the chip from entering WFI by not specifying an architecture.  
-
