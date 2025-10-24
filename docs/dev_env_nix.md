@@ -25,6 +25,25 @@ nix shell .#sftool --command sftool --help
 
 > **目标**：把原本需要 `cargo install my-tool` 的程序纳入 flake，避免污染宿主环境。
 
+优先方案（上游已有 flake）：
+
+- 在 `flake.nix` 的 `inputs` 中加入：
+  ```nix
+  mytool = { url = "github:org/mytool"; inputs.nixpkgs.follows = "nixpkgs"; };
+  ```
+- 在 `devShells` 中按系统选择：
+  ```nix
+  let system = pkgs.stdenv.hostPlatform.system;
+  mytoolPkg = inputs.mytool.packages.${system}.default;
+  in pkgs.mkShellNoCC { packages = [ /* … */ ] ++ [ mytoolPkg ]; }
+  ```
+- 如需通过 `nix shell .#mytool` 直接获取，可在 `packages` 暴露同名条目：
+  ```nix
+  packages.${system}.mytool = mytoolPkg;
+  ```
+
+本地打包方案（上游无 flake）：
+
 1. 在 `nix/` 目录下为工具新建 `<tool>.nix`，使用 `rustPlatform.buildRustPackage`。示例：
    ```nix
    { lib, rustPlatform, fetchFromGitHub, pkg-config }:
@@ -43,7 +62,7 @@ nix shell .#sftool --command sftool --help
      nativeBuildInputs = [ pkg-config ]; # 依赖按需填写
    }
    ```
-2. 在 `flake.nix` 的 overlay 中暴露该包，并将其加入所有 `devShells` 的 `packages`，参考 `sftool` 的现有写法。
+2. 在 `flake.nix` 的 overlay 中暴露该包，并将其加入所有 `devShells` 的 `packages`。
 3. 运行一次构建以获取真实 `cargoHash`：
    ```bash
    nix build --option allow-dirty true .#my-tool
@@ -59,7 +78,11 @@ nix shell .#sftool --command sftool --help
 
 ## 复用经验：`sftool`
 
-仓库已经按上述流程在 `nix/sftool.nix` 中打包了 SiFli 官方的串口烧录工具，并在 `devShell` 默认携带。添加其它工具时可直接照此模板扩展。
+本仓库直接复用上游 `OpenSiFli/sftool` 的 flake 输出，不再维护本地 `nix/sftool.nix`。`sftool` 已默认加入 `devShell`，也通过 `packages` 暴露为 `.#sftool`，可直接使用：
+
+```bash
+nix shell .#sftool --command sftool --help
+```
 
 ## 常见问题
 

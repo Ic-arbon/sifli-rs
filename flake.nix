@@ -7,31 +7,33 @@
       url = "https://flakehub.com/f/nix-community/fenix/0.1";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # Use upstream sftool flake instead of a local derivation
+    sftool = {
+      url = "github:OpenSiFli/sftool";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
     { self, ... }@inputs:
 
     let
-      supportedSystems = [
+      systems = [
         "x86_64-linux"
         "aarch64-linux"
         "x86_64-darwin"
         "aarch64-darwin"
       ];
-      forEachSupportedSystem =
-        f:
-        inputs.nixpkgs.lib.genAttrs supportedSystems (
-          system:
-          f {
-            pkgs = import inputs.nixpkgs {
-              inherit system;
-              overlays = [
-                inputs.self.overlays.default
-              ];
-            };
-          }
-        );
+      forAllSystems = inputs.nixpkgs.lib.genAttrs systems;
+
+      mkPkgs = system:
+        import inputs.nixpkgs {
+          inherit system;
+          overlays = [ self.overlays.default ];
+        };
+
+      sftoolPkgFor = system:
+        inputs.sftool.packages.${system}.sftool;
     in
     {
       overlays.default = final: prev: {
@@ -48,30 +50,29 @@
               targets."thumbv8m.main-none-eabihf".stable.rust-std
             ]
           );
-        sftool = prev.callPackage ./nix/sftool.nix { };
       };
 
-      packages = forEachSupportedSystem (
-        { pkgs }:
-        {
-          sftool = pkgs.sftool;
-        }
-      );
+      packages = forAllSystems (system: {
+        sftool = sftoolPkgFor system;
+      });
 
-      devShells = forEachSupportedSystem (
-        { pkgs }:
+      devShells = forAllSystems (system:
+        let
+          pkgs = mkPkgs system;
+          sftoolPkg = sftoolPkgFor system;
+        in
         {
           default = pkgs.mkShellNoCC {
-            packages = with pkgs; [
+            packages = (with pkgs; [
               rustToolchain
-              sftool
               openssl
               pkg-config
               cargo-deny
               cargo-edit
               cargo-watch
               rust-analyzer
-            ];
+              probe-rs-tools
+            ]) ++ [ sftoolPkg ];
 
             env = {
               # Required by rust-analyzer
