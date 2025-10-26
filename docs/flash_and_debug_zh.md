@@ -14,7 +14,7 @@
 
 ### SFTool (适用于Linux、Mac和Windows)
 
-如果你通过 `nix develop` 进入项目（详见 [docs/dev_env_nix.md](dev_env_nix.md)），`sftool` 会自动出现在 `PATH` 中，无需单独安装；否则请按官方文档自行安装。
+如果你通过 `nix develop ./contrib/nix` 进入项目（详见 [docs/dev_env_nix.md](dev_env_nix.md)），`sftool` 会自动出现在 `PATH` 中，无需单独安装；否则请按官方文档自行安装。
 
 Linux/Mac:
 

@@ -14,7 +14,7 @@ You can find the prepared ftab.bin [here](examples\sf32lb52x), which is generate
 
 ### SFTool (Available on Linux, Mac and Windows)
 
-If you enter the repository with `nix develop` (see [docs/dev_env_nix.md](dev_env_nix.md)), the `sftool` binary is already on the `PATH`. Otherwise install it manually following the upstream instructions.
+If you enter the repository with `nix develop ./contrib/nix` (see [docs/dev_env_nix.md](dev_env_nix.md)), the `sftool` binary is already on the `PATH`. Otherwise install it manually following the upstream instructions.
 
 Linux/Mac:
 

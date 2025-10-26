@@ -14,7 +14,7 @@ This guide assumes you have basic familiarity with:
 
 ## Reproducible Environment with Nix
 
-If you want a turnkey setup, we provide a Nix flake that installs the full cross-compilation toolchain and the SiFli flashing utility. See [docs/dev_env_nix.md](dev_env_nix.md) for details on enabling the shell via `direnv`/`nix develop` and on adding extra CLI tools.
+If you want a turnkey setup, we provide a Nix flake (see `contrib/nix/`) that installs the full cross-compilation toolchain and the SiFli flashing utility. See [docs/dev_env_nix.md](dev_env_nix.md) for details on enabling the shell via `direnv`/`nix develop ./contrib/nix` and on adding extra CLI tools.
 
 ## Installing the Rust Toolchain
 

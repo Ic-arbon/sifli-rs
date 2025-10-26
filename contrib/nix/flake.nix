@@ -48,6 +48,7 @@
               rustfmt
               rust-src
               targets."thumbv8m.main-none-eabihf".stable.rust-std
+              llvm-tools
             ]
           );
       };
@@ -71,6 +72,7 @@
               cargo-edit
               cargo-watch
               rust-analyzer
+              cargo-binutils
               probe-rs-tools
             ]) ++ [ sftoolPkg ];
 

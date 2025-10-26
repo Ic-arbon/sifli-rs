@@ -37,7 +37,8 @@
     "root": {
       "inputs": {
         "fenix": "fenix",
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs",
+        "sftool": "sftool"
       }
     },
     "rust-analyzer-src": {
@@ -54,6 +55,26 @@
         "owner": "rust-lang",
         "ref": "nightly",
         "repo": "rust-analyzer",
+        "type": "github"
+      }
+    },
+    "sftool": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1759201943,
+        "narHash": "sha256-QM5G8lbVRoJToti5EYZ0b+zA6mAsU75H0LL4yIBtZYA=",
+        "owner": "OpenSiFli",
+        "repo": "sftool",
+        "rev": "7bb9ada217fa0d3ea7768aab71ab86f7190680a1",
+        "type": "github"
+      },
+      "original": {
+        "owner": "OpenSiFli",
+        "repo": "sftool",
         "type": "github"
       }
     }
