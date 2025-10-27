@@ -49,6 +49,8 @@ Rust support for SiFli MCUs, including HAL, PAC, etc.
 
 [Get Started](docs/get_started.md)
 
+[Nix Development Environment Notes](docs/dev_env_nix.md)
+
 [sifli-hal](sifli-hal/README.md) (You can see chips and peripherals supported status here)
 
 [examples](examples)
