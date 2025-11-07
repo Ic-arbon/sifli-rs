@@ -20,6 +20,7 @@ pub mod usart;
 pub mod adc;
 pub mod lcdc;
 pub mod dma;
+pub mod mailbox;
 #[cfg(feature = "usb")]
 pub mod usb;
 #[cfg(feature = "_time-driver")]
