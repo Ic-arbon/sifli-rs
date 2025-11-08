@@ -1492,6 +1492,43 @@ fn configure<T: Instance>(
         w.set_hdsel(config.duplex.is_half());
     });
 
+    let (m_val, pce_val, ps_val) = match (config.parity, config.data_bits) {
+        (Parity::ParityNone, DataBits::DataBits8) => {
+            trace!("USART: m: 8 data bits, no parity");
+            (vals::M::Bit8, false, None)
+        }
+        (Parity::ParityNone, DataBits::DataBits9) => {
+            trace!("USART: m: 9 data bits, no parity");
+            (vals::M::Bit9, false, None)
+        }
+        (Parity::ParityNone, DataBits::DataBits7) => {
+            trace!("USART: m: 7 data bits, no parity");
+            (vals::M::Bit8, false, None)
+        }
+        (Parity::ParityEven, DataBits::DataBits8) => {
+            trace!("USART: m: 8 data bits, even parity");
+            (vals::M::Bit9, true, Some(vals::PS::Even))
+        }
+        (Parity::ParityEven, DataBits::DataBits7) => {
+            trace!("USART: m: 7 data bits, even parity");
+            (vals::M::Bit8, true, Some(vals::PS::Even))
+        }
+        (Parity::ParityOdd, DataBits::DataBits8) => {
+            trace!("USART: m: 8 data bits, odd parity");
+            (vals::M::Bit9, true, Some(vals::PS::Odd))
+        }
+        (Parity::ParityOdd, DataBits::DataBits7) => {
+            trace!("USART: m 7 data bits, odd parity");
+            (vals::M::Bit8, true, Some(vals::PS::Odd))
+        }
+        (_, DataBits::DataBits6) => {
+            todo!()
+        }
+        _ => {
+            return Err(ConfigError::DataParityNotSupported);
+        }
+    };
+
     r.cr1().write(|w| {
         // enable uart
         w.set_ue(true);
@@ -1508,59 +1545,15 @@ fn configure<T: Instance>(
             w.set_re(enable_rx);
         }
 
-        // configure word size and parity, since the parity bit is inserted into the MSB position,
-        // it increases the effective word size
-        match (config.parity, config.data_bits) {
-            (Parity::ParityNone, DataBits::DataBits8) => {
-                trace!("USART: m: 8 data bits, no parity");
-                w.set_m(vals::M::Bit8);
-                w.set_pce(false);
-            }
-            (Parity::ParityNone, DataBits::DataBits9) => {
-                trace!("USART: m: 9 data bits, no parity");
-                w.set_m(vals::M::Bit9);
-                w.set_pce(false);
-            }
-            (Parity::ParityNone, DataBits::DataBits7) => {
-                trace!("USART: m: 7 data bits, no parity");
-                w.set_m(vals::M::Bit8);
-                w.set_pce(false);
-            }
-            (Parity::ParityEven, DataBits::DataBits8) => {
-                trace!("USART: m: 8 data bits, even parity");
-                w.set_m(vals::M::Bit9);
-                w.set_pce(true);
-                w.set_ps(vals::PS::Even);
-            }
-            (Parity::ParityEven, DataBits::DataBits7) => {
-                trace!("USART: m: 7 data bits, even parity");
-                w.set_m(vals::M::Bit8);
-                w.set_pce(true);
-                w.set_ps(vals::PS::Even);
-            }
-            (Parity::ParityOdd, DataBits::DataBits8) => {
-                trace!("USART: m: 8 data bits, odd parity");
-                w.set_m(vals::M::Bit9);
-                w.set_pce(true);
-                w.set_ps(vals::PS::Odd);
-            }
-            (Parity::ParityOdd, DataBits::DataBits7) => {
-                trace!("USART: m 7 data bits, odd parity");
-                w.set_m(vals::M::Bit8);
-                w.set_pce(true);
-                w.set_ps(vals::PS::Odd);
-            }
-            (_, DataBits::DataBits6) => {
-                todo!()
-            }
-            _ => {
-                return Err(ConfigError::DataParityNotSupported);
-            }
+        w.set_m(m_val);
+        w.set_pce(pce_val);
+        if let Some(ps) = ps_val {
+            w.set_ps(ps);
         }
+
         w.set_over8(vals::OVER8::from_bits(over8 as _));
 
-        Ok(())
-    })?;
+    });
 
     Ok(())
 }
