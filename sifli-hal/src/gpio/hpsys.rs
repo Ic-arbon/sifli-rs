@@ -379,6 +379,10 @@ impl HpsysPin {
         self.enable_interrupt();
     }
 
+    /// Set function without setting pull-up/down.
+    /// # Safety
+    /// 
+    /// Caller must ensure fsel is valid for the pin.
     pub unsafe fn set_fsel_unchecked(&mut self, fsel: u8) {
         match self.pin {
             0..=38 => {

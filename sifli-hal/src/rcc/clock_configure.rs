@@ -139,7 +139,7 @@ impl Config {
 
     /// Apply the RCC clock configuration to the hardware registers
     /// 
-    /// Safety
+    /// # Safety
     /// This function is typically called by sifli_hal::init() (configured 
     /// in sifli_hal::Config.rcc), but can also be called independently as 
     /// long as it does not interfere with the clocks of already initialized 
