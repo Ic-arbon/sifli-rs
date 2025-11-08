@@ -14,7 +14,7 @@ use crate::{interrupt, peripherals, Peripheral};
 use crate::utils::BitIter64;
 
 // TODO: move this const to _generated.rs
-#[cfg(any(feature = "sf32lb52x"))]
+#[cfg(feature = "sf32lb52x")]
 pub(crate) const PA_PIN_COUNT: usize = 44;
 
 pub mod hpsys;
@@ -831,11 +831,13 @@ mod eh02 {
         type Error = Infallible;
 
         fn set_high(&mut self) -> Result<(), Self::Error> {
-            Ok(self.set_high())
+            self.set_high();
+            Ok(())
         }
 
         fn set_low(&mut self) -> Result<(), Self::Error> {
-            Ok(self.set_low())
+            self.set_low();
+            Ok(())
         }
     }
 
@@ -853,7 +855,8 @@ mod eh02 {
         type Error = Infallible;
         #[inline]
         fn toggle(&mut self) -> Result<(), Self::Error> {
-            Ok(self.toggle())
+            self.toggle();
+            Ok(())
         }
     }
 
@@ -874,12 +877,14 @@ mod eh02 {
 
         #[inline]
         fn set_high(&mut self) -> Result<(), Self::Error> {
-            Ok(self.set_high())
+            self.set_high();
+            Ok(())
         }
 
         #[inline]
         fn set_low(&mut self) -> Result<(), Self::Error> {
-            Ok(self.set_low())
+            self.set_low();
+            Ok(())
         }
     }
 
@@ -897,7 +902,8 @@ mod eh02 {
         type Error = Infallible;
         #[inline]
         fn toggle(&mut self) -> Result<(), Self::Error> {
-            Ok(self.toggle())
+            self.toggle();
+            Ok(())
         }
     }
 
@@ -917,11 +923,13 @@ mod eh02 {
         type Error = Infallible;
 
         fn set_high(&mut self) -> Result<(), Self::Error> {
-            Ok(self.set_high())
+            self.set_high();
+            Ok(())
         }
 
         fn set_low(&mut self) -> Result<(), Self::Error> {
-            Ok(self.set_low())
+            self.set_low();
+            Ok(())
         }
     }
 
@@ -939,7 +947,8 @@ mod eh02 {
         type Error = Infallible;
         #[inline]
         fn toggle(&mut self) -> Result<(), Self::Error> {
-            Ok(self.toggle())
+            self.toggle();
+            Ok(())
         }
     }
 }
@@ -964,11 +973,13 @@ impl<'d> embedded_hal_1::digital::ErrorType for Output<'d> {
 
 impl<'d> embedded_hal_1::digital::OutputPin for Output<'d> {
     fn set_high(&mut self) -> Result<(), Self::Error> {
-        Ok(self.set_high())
+        self.set_high();
+        Ok(())
     }
 
     fn set_low(&mut self) -> Result<(), Self::Error> {
-        Ok(self.set_low())
+        self.set_low();
+        Ok(())
     }
 }
 
@@ -988,11 +999,13 @@ impl<'d> embedded_hal_1::digital::ErrorType for OutputOpenDrain<'d> {
 
 impl<'d> embedded_hal_1::digital::OutputPin for OutputOpenDrain<'d> {
     fn set_high(&mut self) -> Result<(), Self::Error> {
-        Ok(self.set_high())
+        self.set_high();
+        Ok(())
     }
 
     fn set_low(&mut self) -> Result<(), Self::Error> {
-        Ok(self.set_low())
+        self.set_low();
+        Ok(())
     }
 }
 
@@ -1032,11 +1045,13 @@ impl<'d> embedded_hal_1::digital::InputPin for Flex<'d> {
 
 impl<'d> embedded_hal_1::digital::OutputPin for Flex<'d> {
     fn set_high(&mut self) -> Result<(), Self::Error> {
-        Ok(self.set_high())
+        self.set_high();
+        Ok(())
     }
 
     fn set_low(&mut self) -> Result<(), Self::Error> {
-        Ok(self.set_low())
+        self.set_low();
+        Ok(())
     }
 }
 
