@@ -103,11 +103,12 @@ fn read_factory_cfg_id_vbuck(pvdd_v18_en: bool) -> Option<FactoryCfgVbkLdo> {
     if read(0, &mut data, 32).is_err() {
         return None;
     }
-
-    let pid = crate::syscfg::get_pid();
+    
+    let syscfg = crate::syscfg::Syscfg::read();
+    let pid = syscfg.pid;
     let mut cfg = FactoryCfgVbkLdo::default();
 
-    if crate::syscfg::is_letter_series() {
+    if syscfg.revision().is_letter_series() {
         if (pid == 4 && !pvdd_v18_en) || (pid != 4 && pvdd_v18_en) {
             // 52D 3.3V or 52A 1.8V configuration
             cfg.buck_vos_trim = data[20] & 7;
