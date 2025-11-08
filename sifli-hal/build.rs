@@ -10,7 +10,6 @@ use std::process::Command;
 use proc_macro2::TokenStream;
 use quote::quote;
 use quote::format_ident;
-use serde_yaml;
 
 mod build_serde;
 // Structures imported from build_serde.rs
@@ -175,12 +174,12 @@ fn generate_rcc_impls(peripherals: &Peripherals, fieldsets: &BTreeMap<String, Fi
         let (enr_reg, _enr_field) = find_field_in_registers(&[
             ("ENR1", enr1),
             ("ENR2", enr2),
-        ], &field_name).expect(&format!("No ENR field found for peripheral {}", peripheral.name));
+        ], field_name).unwrap_or_else(|| panic!("No ENR field found for peripheral {}", peripheral.name));
 
         let (rstr_reg, _rstr_field) = find_field_in_registers(&[
             ("RSTR1", rstr1),
             ("RSTR2", rstr2),
-        ], &field_name).expect(&format!("No RSTR field found for peripheral {}", peripheral.name));
+        ], field_name).unwrap_or_else(|| panic!("No RSTR field found for peripheral {}", peripheral.name));
         let field_set_ident = format_ident!("set_{}", field_name);
         let field_name_ident = format_ident!("{}", field_name);
         let enr_reg_ident = format_ident!("{}", enr_reg.to_lowercase());
@@ -339,7 +338,7 @@ fn generate_signal_impls(
             // For superimposed type, process each sub-signal
             for signal_name in &signal_def.signals {
                 // Find the corresponding signal definition
-                if let Some(sub_signal) = find_matching_signal(&signal_name, &pinmux_signals.hcpu){
+                if let Some(sub_signal) = find_matching_signal(signal_name, &pinmux_signals.hcpu){
                     // Recursively process the sub-signal
                     generate_signal_impls(
                         implementations,
@@ -473,14 +472,9 @@ fn find_matching_signal<'a>(
     function: &str,
     signals: &'a [build_serde::SignalDefinition],
 ) -> Option<&'a build_serde::SignalDefinition> {
-    for signal in signals {
-        if regex::Regex::new(&signal.name)
+    signals.iter().find(|&signal| regex::Regex::new(&signal.name)
             .unwrap()
-            .is_match(function) {
-            return Some(signal);
-        }
-    }
-    None
+            .is_match(function)).map(|v| v as _)
 }
 
 fn generate_adc_impls(adc: &build_serde::Adc) -> TokenStream {
@@ -542,8 +536,7 @@ fn generate_dma_impls(dma: &build_serde::Dma) -> TokenStream {
             let (peripheral_str, signal_str) = req.name.split_once('_').unwrap_or((&req.name, ""));
             
             // Prefer explicit module name from yaml, otherwise infer from peripheral name.
-            let module_name = req.module.as_ref()
-                .map(|m| m.clone())
+            let module_name = req.module.clone()
                 .unwrap_or_else(|| {
                     // Remove trailing digits (e.g., "USART1" -> "usart")
                     peripheral_str.trim_end_matches(|c: char| c.is_ascii_digit()).to_string()

@@ -16,9 +16,11 @@ pub mod gpio;
 pub mod timer;
 pub mod time;
 pub mod pmu;
+#[allow(clippy::all)] // modified from embassy-stm32
 pub mod usart;
 pub mod adc;
 pub mod lcdc;
+#[allow(clippy::all)] // modified from embassy-stm32
 pub mod dma;
 pub mod mailbox;
 #[cfg(feature = "usb")]
@@ -127,6 +129,7 @@ pub(crate) mod _generated {
     #![allow(unused_imports)]
     #![allow(non_snake_case)]
     #![allow(missing_docs)]
+    #![allow(clippy::all)]
 
     include!(concat!(env!("OUT_DIR"), "/_generated.rs"));
 }

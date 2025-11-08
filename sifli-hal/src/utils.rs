@@ -8,9 +8,6 @@ pub(crate)struct BitFlags8 {
 }
 
 impl BitFlags8 {
-    pub const ZERO: Self = Self {
-        flags: AtomicU8::new(0),
-    };
     /// Creates new bit flags with an initial value.
     pub(crate)fn new(initial_value: u8) -> Self {
         Self {
@@ -58,9 +55,6 @@ pub(crate)struct BitFlags32 {
 }
 
 impl BitFlags32 {
-    pub const ZERO: Self = Self {
-        flags: AtomicU32::new(0),
-    };
     /// Creates new bit flags with an initial value.
     pub(crate)fn new(initial_value: u32) -> Self {
         Self {
@@ -108,10 +102,6 @@ pub(crate)struct BitFlags64 {
 }
 
 impl BitFlags64 {
-    pub const ZERO: Self = Self {
-        flags: AtomicU64::new(0),
-    };
-
     /// Creates new bit flags with an initial value.
     pub(crate)fn new(initial_value: u64) -> Self {
         Self {
