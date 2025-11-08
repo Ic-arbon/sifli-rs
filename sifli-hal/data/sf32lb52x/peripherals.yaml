@@ -4,22 +4,20 @@ hcpu:
   - name: HPSYS_RCC
     enable_reset: false
   - name: EXTDMA
-    clock: clk_peri
+    clock: hclk
   - name: HPSYS_PINMUX
     rcc_field: PINMUX1
-    clock: clk_peri
   - name: ATIM1
-    clock: clk_peri
+    clock: pclk
   - name: AUDPRC
     # TODO: clock select
     clock: clk_aud_pll
   - name: EZIP1
-    clock: clk_peri
+    clock: hclk
   - name: EPIC
-    # TODO: check if this is correct
     clock: hclk
   - name: LCDC1
-    clock: clk_peri
+    clock: hclk
   - name: I2S1
     # TODO: clock select
     clock: clk_aud_pll
@@ -27,21 +25,21 @@ hcpu:
     enable_reset: false
     clock: clk_peri
   - name: EFUSEC
-    clock: clk_peri
+    clock: pclk
   - name: AES
-    clock: clk_peri
+    clock: hclk
   - name: TRNG
-    clock: clk_peri
+    clock: pclk
   - name: MPI1
     clock: clk_mpi1
   - name: MPI2
     clock: clk_mpi2
   - name: SDMMC1
-    clock: clk_peri
+    clock: hclk
   - name: CRC1
-    clock: clk_peri
+    clock: hclk
   - name: PTC1
-    clock: clk_peri
+    clock: hclk
   - name: DMAC1
     clock: hclk
   - name: USART1
@@ -54,18 +52,18 @@ hcpu:
   - name: USART3
     clock: clk_peri
   - name: GPADC
-    clock: clk_peri
+    clock: pclk
   - name: AUDCODEC
     # TODO: clock select
     clock: clk_aud_pll
   - name: TSEN
-    clock: clk_peri
+    clock: pclk
   - name: GPTIM1
-    clock: pclk1
+    clock: pclk
   - name: BTIM1
-    clock: pclk1
+    clock: pclk
   - name: WDT1
-    clock: clk_peri
+    clock: clk_wdt
     enable_reset: false
   - name: SPI1
     clock: clk_peri
@@ -84,7 +82,7 @@ hcpu:
     clock: clk_peri
   - name: HPSYS_GPIO
     rcc_field: GPIO1
-    clock: clk_peri
+    clock: hclk
   - name: GPTIM2
     clock: clk_peri_div2
   - name: BTIM2
@@ -108,3 +106,5 @@ hcpu:
     enable_reset: false
   - name: USBC
     clock: clk_usb
+  - name: MAILBOX1
+    clock: pclk

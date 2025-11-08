@@ -14,7 +14,7 @@ use crate::{interrupt, peripherals, Peripheral};
 use crate::utils::BitIter64;
 
 // TODO: move this const to _generated.rs
-#[cfg(any(feature = "sf32lb52x"))]
+#[cfg(feature = "sf32lb52x")]
 pub(crate) const PA_PIN_COUNT: usize = 44;
 
 pub mod hpsys;
