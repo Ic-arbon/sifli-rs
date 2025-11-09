@@ -15,12 +15,12 @@ use embassy_time::Timer;
 use panic_probe as _;
 
 use sifli_hal::gpio;
-use sifli_hal::patch::Patch;
+use sifli_hal::patch::{Patch, PatchEntry};
 
 #[path = "../patch_data.rs"]
-mod patch_data;
-
-use patch_data::{PATCH_CODE_U32, PATCH_RECORD_U32};
+mod patch_a3;
+#[path = "../patch_data_rev_b.rs"]
+mod patch_ls;
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
@@ -28,16 +28,43 @@ async fn main(_spawner: Spawner) {
     let mut patch = Patch::new(p.PATCH);
     let mut led = gpio::Output::new(p.PA26, gpio::Level::Low);
 
-    match patch.install_from_data(&PATCH_RECORD_U32, &PATCH_CODE_U32) {
-        Ok(outcome) => info!(
-            "entries={}, mask=0x{:08x}, cer=0x{:08x}, first=0x{:08x}",
-            outcome.report.entry_count,
-            outcome.report.applied_mask,
-            patch.cer(),
-            outcome.first_word
-        ),
+    match patch.install_auto(
+        &patch_a3::PATCH_RECORD_U32,
+        &patch_a3::PATCH_CODE_U32,
+        &patch_ls::PATCH_RECORD_U32,
+        &patch_ls::PATCH_CODE_U32,
+    ) {
+        Ok((patch_type, outcome)) => {
+            info!(
+                "patch_type={}, entries={}, mask=0x{:08x}, cer=0x{:08x}, first=0x{:08x}",
+                patch_type,
+                outcome.report.entry_count,
+                outcome.report.applied_mask,
+                patch.cer(),
+                outcome.first_word
+            );
+
+            // Test save(): capture current patch entries and CER
+            let mut saved: [PatchEntry; 32] = [PatchEntry::default(); 32];
+            match patch.save(&mut saved) {
+                Ok((count, cer)) => {
+                    info!("save: count={}, cer=0x{:08x}", count, cer);
+                    // Re-apply using saved table to validate semantics
+                    patch.disable_all();
+                    match patch.apply_with_mask(&saved[..count], cer) {
+                        Ok(mask) => info!(
+                            "restore: mask=0x{:08x}, cer=0x{:08x}",
+                            mask,
+                            patch.cer()
+                        ),
+                        Err(e) => warn!("restore failed: {:?}", e),
+                    }
+                }
+                Err(e) => warn!("save failed: {:?}", e),
+            }
+        }
         Err(err) => {
-            warn!("install failed: {:?}", err);
+            warn!("auto install failed: {:?}", err);
             return;
         }
     }

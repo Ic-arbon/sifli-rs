@@ -9,6 +9,7 @@ use core::{mem, ptr, slice};
 use embassy_hal_internal::{into_ref, PeripheralRef};
 
 use crate::{pac, peripherals, Peripheral};
+use crate::syscfg::{Syscfg, PatchType};
 
 /// PATCH 支持的通道数量。
 pub const CHANNEL_COUNT: usize = 32;
@@ -162,6 +163,13 @@ pub struct Patch<'d> {
 
 impl<'d> Patch<'d> {
     /// 取得 PATCH 外设单例。
+    ///
+    /// 示例
+    /// ```no_run
+    /// let p = sifli_hal::init(Default::default());
+    /// let mut patch = sifli_hal::patch::Patch::new(p.PATCH);
+    /// let _ver = patch.version();
+    /// ```
     pub fn new(patch: impl Peripheral<P = peripherals::PATCH> + 'd) -> Self {
         into_ref!(patch);
         Self {
@@ -176,11 +184,23 @@ impl<'d> Patch<'d> {
     ///
     /// 调用方需确保 LPSYS 补丁记录区可由当前内核访问，且其中内容遵循 SDK
     /// `PATCH_RECORD_U32` 布局。
-    pub unsafe fn install_from_patch_ram(&mut self) -> Result<InstallReport, InstallError> {
+    unsafe fn install_from_patch_ram(&mut self) -> Result<InstallReport, InstallError> {
         self.install_from_addr(PATCH_RECORD_SYS_ADDR as *const u32)
     }
 
     /// 将补丁表和补丁代码写入补丁 RAM 并执行安装。
+    ///
+    /// 示例
+    /// ```no_run
+    /// # use sifli_hal::patch::Patch;
+    /// # let p = sifli_hal::init(Default::default());
+    /// # let mut patch = Patch::new(p.PATCH);
+    /// // 参见 examples/sf32lb52x/src/patch_data*.rs 获取 A3/Letter 的数组常量
+    /// # let record: &[u32] = &[]; // 替换为实际数组
+    /// # let code: &[u32] = &[];   // 替换为实际数组
+    /// let outcome = patch.install_from_data(record, code).unwrap();
+    /// let _ = (outcome.report.entry_count, outcome.report.applied_mask);
+    /// ```
     pub fn install_from_data(
         &mut self,
         record_words: &[u32],
@@ -196,6 +216,48 @@ impl<'d> Patch<'d> {
         Ok(InstallDataOutcome { report, first_word })
     }
 
+    /// 根据芯片版本自动选择补丁数据并完成安装。
+    ///
+    /// - A3 及更早版本（REVID <= 0x03）：使用 `a3_record`/`a3_code`
+    /// - Letter Series（A4/B4，REVID = 0x07/0x0F）：使用 `letter_record`/`letter_code`
+    ///
+    /// 返回使用的补丁类型与 `install_from_data` 的结果。
+    ///
+    /// 示例
+    /// ```no_run
+    /// # use sifli_hal::patch::Patch;
+    /// # let p = sifli_hal::init(Default::default());
+    /// # let mut patch = Patch::new(p.PATCH);
+    /// # let a3_record: &[u32] = &[]; let a3_code: &[u32] = &[];
+    /// # let ls_record: &[u32] = &[]; let ls_code: &[u32] = &[];
+    /// if let Ok((kind, out)) = patch.install_auto(a3_record, a3_code, ls_record, ls_code) {
+    ///     let _ = (kind, out.report.entry_count);
+    /// }
+    /// ```
+    pub fn install_auto(
+        &mut self,
+        a3_record: &[u32],
+        a3_code: &[u32],
+        letter_record: &[u32],
+        letter_code: &[u32],
+    ) -> Result<(PatchType, InstallDataOutcome), AutoInstallError> {
+        let rev = Syscfg::read().revision();
+        let Some(kind) = rev.patch_type() else {
+            return Err(AutoInstallError::InvalidRevision(rev.raw_value()));
+        };
+
+        let outcome = match kind {
+            PatchType::A3 => self
+                .install_from_data(a3_record, a3_code)
+                .map_err(AutoInstallError::Install)?,
+            PatchType::LetterSeries => self
+                .install_from_data(letter_record, letter_code)
+                .map_err(AutoInstallError::Install)?,
+        };
+
+        Ok((kind, outcome))
+    }
+
     /// 按 HAL 实现从指定内存地址解析补丁记录并安装。
     ///
     /// `record_addr` 需指向以 `TAG` 开头、长度字段随后（单位：字节）的补丁表。
@@ -204,7 +266,7 @@ impl<'d> Patch<'d> {
     ///
     /// - 指针必须可读，且至少包含 `PATCH_RECORD_SIZE` 字节有效数据；
     /// - 补丁记录的结构须与 SDK 保持一致。
-    pub unsafe fn install_from_addr(
+    unsafe fn install_from_addr(
         &mut self,
         record_addr: *const u32,
     ) -> Result<InstallReport, InstallError> {
@@ -228,11 +290,34 @@ impl<'d> Patch<'d> {
     }
 
     /// 安装补丁，返回实际写入的通道掩码。
+    ///
+    /// 示例（手工条目）
+    /// ```no_run
+    /// # use sifli_hal::patch::{Patch, PatchEntry};
+    /// # let p = sifli_hal::init(Default::default());
+    /// # let mut patch = Patch::new(p.PATCH);
+    /// let entries = [
+    ///     PatchEntry { break_addr: 0x0000_DC14, data: 0xB91C_F110 },
+    ///     PatchEntry { break_addr: 0x0000_DEA4, data: 0xB8F2_F110 },
+    /// ];
+    /// let _mask = patch.apply(&entries).unwrap();
+    /// ```
     pub fn apply(&mut self, entries: &[PatchEntry]) -> Result<u32, PatchError> {
         self.apply_internal(entries, 0)
     }
 
     /// 按照给定掩码恢复补丁，通常用于休眠唤醒后的还原场景。
+    ///
+    /// 示例（保存后恢复）
+    /// ```no_run
+    /// # use sifli_hal::patch::{Patch, PatchEntry};
+    /// # let p = sifli_hal::init(Default::default());
+    /// # let mut patch = Patch::new(p.PATCH);
+    /// let mut buf: [PatchEntry; 32] = [PatchEntry::default(); 32];
+    /// let (count, cer) = patch.save(&mut buf).unwrap();
+    /// patch.disable_all();
+    /// let _mask = patch.apply_with_mask(&buf[..count], cer).unwrap();
+    /// ```
     pub fn apply_with_mask(
         &mut self,
         entries: &[PatchEntry],
@@ -245,6 +330,22 @@ impl<'d> Patch<'d> {
     }
 
     /// 保存当前补丁表到用户缓冲区，返回 `(实际记录条目, CER 值)`。
+    ///
+    /// 语义参考 SDK 的 `HAL_PATCH_save`：
+    /// - 从 `PATCH_AON` 起连续枚举已启用通道，遇到首个未启用通道则停止；
+    /// - `break_addr` 保存为字节地址（`CH.addr << 2`）；
+    /// - `data` 保存为当前通道的匹配数据（通过 `CSR` 选通后读取 `CDR`）。
+    ///
+    /// 示例（保存并恢复）
+    /// ```no_run
+    /// # use sifli_hal::patch::{Patch, PatchEntry};
+    /// # let p = sifli_hal::init(Default::default());
+    /// # let mut patch = Patch::new(p.PATCH);
+    /// let mut saved: [PatchEntry; 32] = [PatchEntry::default(); 32];
+    /// let (n, cer) = patch.save(&mut saved).unwrap();
+    /// patch.disable_all();
+    /// let _mask = patch.apply_with_mask(&saved[..n], cer).unwrap();
+    /// ```
     pub fn save(&self, buffer: &mut [PatchEntry]) -> Result<(usize, u32), PatchError> {
         if buffer.is_empty() {
             return Err(PatchError::BufferTooSmall);
@@ -255,7 +356,8 @@ impl<'d> Patch<'d> {
 
         let limit = PATCH_AON.saturating_add(buffer.len());
         for channel in PATCH_AON..CHANNEL_COUNT.min(limit) {
-            if (cer & (1u32 << channel)) == 0 {
+            let bit = 1u32 << channel;
+            if (cer & bit) == 0 {
                 break;
             }
 
@@ -266,13 +368,16 @@ impl<'d> Patch<'d> {
                 return Err(PatchError::BufferTooSmall);
             }
 
-            buffer[count] = PatchEntry {
-                break_addr,
-                // HCPU 无法直接读取 LCPU ROM 指令，保留占位值。
-                data: 0,
-            };
+            // 选通通道，读取其匹配数据（与安装时写入 CDR 的值一致）。
+            self.regs.csr().write(|w| w.set_bits(bit));
+            let data = self.regs.cdr().read().bits();
+
+            buffer[count] = PatchEntry { break_addr, data };
             count += 1;
         }
+
+        // 清除选择寄存器，避免残留。
+        self.regs.csr().write(|w| w.set_bits(0));
 
         Ok((count, cer))
     }
@@ -370,6 +475,27 @@ pub enum InstallDataError {
     RecordTooLarge { bytes: usize },
     CodeTooLarge { bytes: usize },
     Install(InstallError),
+}
+
+/// 自动安装接口的错误类型。
+#[derive(Debug, PartialEq, Eq)]
+pub enum AutoInstallError {
+    /// 芯片版本号无效或未知。
+    InvalidRevision(u8),
+    /// `install_from_data` 过程中的错误。
+    Install(InstallDataError),
+}
+
+#[cfg(feature = "defmt")]
+impl defmt::Format for AutoInstallError {
+    fn format(&self, fmt: defmt::Formatter) {
+        match self {
+            AutoInstallError::InvalidRevision(v) => {
+                defmt::write!(fmt, "AutoInstallError::InvalidRevision(0x{:02x})", v)
+            }
+            AutoInstallError::Install(e) => defmt::write!(fmt, "AutoInstallError::Install({:?})", e),
+        }
+    }
 }
 
 impl From<InstallError> for InstallDataError {
