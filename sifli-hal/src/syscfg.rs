@@ -13,17 +13,15 @@
 //! let rev = sig.revision();
 //!
 //! // Check chip version
-//! if rev.is_valid() {
-//!     match rev.patch_type() {
-//!         Some(PatchType::A3) => {
-//!             // Use A3 patch
-//!         }
-//!         Some(PatchType::LetterSeries) => {
-//!             // Use Letter Series patch
-//!         }
-//!         None => {
-//!             // Invalid revision
-//!         }
+//! match rev.patch_type() {
+//!     Some(PatchType::A3) => {
+//!         // Use A3 patch
+//!     }
+//!     Some(PatchType::LetterSeries) => {
+//!         // Use Letter Series patch
+//!     }
+//!     None => {
+//!         // Invalid revision
 //!     }
 //! }
 //! ```
@@ -94,7 +92,7 @@ impl defmt::Format for Syscfg {
     fn format(&self, fmt: defmt::Formatter) {
         defmt::write!(
             fmt,
-            "Syscfg { revid: 0x{:02x}, pid: 0x{:02x}, cid: 0x{:02x}, sid: 0x{:02x} }",
+            "Syscfg {{ revid: 0x{:02x}, pid: 0x{:02x}, cid: 0x{:02x}, sid: 0x{:02x} }}",
             self.revid,
             self.pid,
             self.cid,
@@ -267,32 +265,4 @@ pub enum BootMode {
 /// register to determine if the chip booted in download mode.
 pub fn boot_mode() -> BootMode {
     todo!("boot_mode: read HPSYS_CFG->BMR register")
-}
-
-/// eFuse read error
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EfuseError {
-    /// eFuse controller not initialized
-    NotInitialized,
-    /// Read operation failed
-    ReadFailed,
-}
-
-/// Read chip unique ID from eFuse
-///
-/// Returns a 16-byte unique identifier stored in the chip's eFuse.
-/// This is used by the Bluetooth stack to generate the BT MAC address.
-///
-/// # Note
-///
-/// This function is not yet implemented. It requires:
-/// 1. eFuse controller initialization (`HAL_EFUSE_Init()`)
-/// 2. Reading from the correct eFuse offset (`EFUSE_OFFSET_UID`)
-///
-/// # Errors
-///
-/// Returns `EfuseError::NotInitialized` if the eFuse controller hasn't been
-/// initialized, or `EfuseError::ReadFailed` if the read operation fails.
-pub fn efuse_uid() -> Result<[u8; 16], EfuseError> {
-    todo!("efuse_uid: implement HAL_EFUSE_Read wrapper")
 }
