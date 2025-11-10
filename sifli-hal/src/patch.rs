@@ -369,41 +369,41 @@ impl<'d> Patch<'d> {
             }
 
             // 选通通道，读取其匹配数据（与安装时写入 CDR 的值一致）。
-            self.regs.csr().write(|w| w.set_bits(bit));
-            let data = self.regs.cdr().read().bits();
+            self.regs.csr().write(|w| w.set_cs(bit));
+            let data = self.regs.cdr().read().data();
 
             buffer[count] = PatchEntry { break_addr, data };
             count += 1;
         }
 
         // 清除选择寄存器，避免残留。
-        self.regs.csr().write(|w| w.set_bits(0));
+        self.regs.csr().write(|w| w.set_cs(0));
 
         Ok((count, cer))
     }
 
     /// 关闭所有补丁通道。
     pub fn disable_all(&mut self) {
-        self.regs.cer().write(|w| w.set_bits(0));
-        self.regs.csr().write(|w| w.set_bits(0));
+        self.regs.cer().write(|w| w.set_ce(0));
+        self.regs.csr().write(|w| w.set_cs(0));
     }
 
     /// 返回当前使能掩码。
     #[inline]
     pub fn cer(&self) -> u32 {
-        self.regs.cer().read().bits()
+        self.regs.cer().read().ce()
     }
 
     /// 返回当前状态寄存器值。
     #[inline]
     pub fn csr(&self) -> u32 {
-        self.regs.csr().read().bits()
+        self.regs.csr().read().cs()
     }
 
     /// 模块版本号。
     #[inline]
     pub fn version(&self) -> u32 {
-        self.regs.ver().read().bits()
+        self.regs.ver().read().id()
     }
 
     fn apply_internal(
@@ -438,10 +438,10 @@ impl<'d> Patch<'d> {
         }
 
         // 配置完成后清空 CSR，避免残留通道选择。
-        self.regs.csr().write(|w| w.set_bits(0));
+        self.regs.csr().write(|w| w.set_cs(0));
 
         let enable_mask = if cer_mask != 0 { cer_mask } else { applied_mask };
-        self.regs.cer().write(|w| w.set_bits(enable_mask));
+        self.regs.cer().write(|w| w.set_ce(enable_mask));
 
         Ok(applied_mask)
     }
@@ -454,8 +454,8 @@ impl<'d> Patch<'d> {
         });
 
         let bit = 1u32 << channel;
-        self.regs.csr().write(|w| w.set_bits(bit));
-        self.regs.cdr().write(|w| w.set_bits(entry.data));
+        self.regs.csr().write(|w| w.set_cs(bit));
+        self.regs.cdr().write(|w| w.set_data(entry.data));
     }
 }
 
