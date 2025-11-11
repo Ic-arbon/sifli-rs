@@ -39,6 +39,8 @@
 //! Currently, this module provides the types and interfaces, with actual peripheral
 //! implementations to be added when PAC support is available.
 
+use crate::_generated::interrupt::typelevel::Interrupt;
+
 /// Mailbox channel identifier (0-15)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Channel(u8);
@@ -150,6 +152,7 @@ impl LockCore {
 /// The full mailbox has 4 channels (C1-C4), each with this register layout.
 /// Each register group controls 16 interrupt lines (INT0-INT15).
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct MailboxChannelRegs {
     /// Interrupt Enable Register - enables specific interrupt channels
     pub ier: u32,
@@ -288,21 +291,22 @@ pub mod addrs {
     pub const MAILBOX2_BASE: usize = 0x40002000;
 }
 
-/// Get a pointer to MAILBOX1 channel registers
-///
-/// # Safety
-/// Caller must ensure exclusive access and proper synchronization
-pub unsafe fn mailbox1_regs() -> &'static mut MailboxChannelRegs {
-    &mut *(addrs::MAILBOX1_BASE as *mut MailboxChannelRegs)
-}
+// /// Get a pointer to MAILBOX1 channel registers
+// ///
+// /// # Safety
+// /// Caller must ensure exclusive access and proper synchronization
+// pub unsafe fn mailbox1_regs() -> &'static mut MailboxChannelRegs {
+//     &mut *(addrs::MAILBOX1_BASE as *mut MailboxChannelRegs)
+// }
 
-/// Get a pointer to MAILBOX2 channel registers
-///
-/// # Safety
-/// Caller must ensure exclusive access and proper synchronization
-pub unsafe fn mailbox2_regs() -> &'static mut MailboxChannelRegs {
-    &mut *(addrs::MAILBOX2_BASE as *mut MailboxChannelRegs)
-}
+// /// Get a pointer to MAILBOX2 channel registers
+// ///
+// /// # Safety
+// /// Caller must ensure exclusive access and proper synchronization
+// pub unsafe fn mailbox2_regs() -> &'static mut MailboxChannelRegs {
+//     &mut *(addrs::MAILBOX2_BASE as *mut MailboxChannelRegs)
+// }
+
 
 // TODO: When PAC support is available, implement the following:
 // - Mailbox driver struct with Peripheral trait
@@ -310,35 +314,60 @@ pub unsafe fn mailbox2_regs() -> &'static mut MailboxChannelRegs {
 // - Integration with embassy_hal patterns
 // - Proper RCC enable/reset support
 
+use core::marker::PhantomData;
+
 // Example of future API once PAC is available:
 //
 // ```rust,ignore
-// use embassy_hal_internal::{into_ref, Peripheral, PeripheralRef};
+use embassy_hal_internal::{into_ref, Peripheral, PeripheralRef};
+
+use crate::{interrupt, rcc::RccEnableReset};
 //
-// pub struct Mailbox<'d, T: Instance> {
-//     _peri: PeripheralRef<'d, T>,
-// }
-//
-// impl<'d, T: Instance> Mailbox<'d, T> {
-//     pub fn new(
-//         peri: impl Peripheral<P = T> + 'd,
-//         _irq: impl interrupt::typelevel::Binding<T::Interrupt, InterruptHandler<T>> + 'd,
-//     ) -> Self {
-//         into_ref!(peri);
-//         T::enable_and_reset();
-//         T::Interrupt::unpend();
-//         unsafe { T::Interrupt::enable() };
-//         Self { _peri: peri }
-//     }
-//
-//     pub fn mask_channel(&mut self, channel: Channel) {
-//         T::regs().mask_channel(channel);
-//     }
-//     // ... other methods
-// }
-//
-// pub trait Instance: RccEnableReset + 'static {
-//     type Interrupt: interrupt::typelevel::Interrupt;
-//     fn regs() -> &'static mut MailboxChannelRegs;
-// }
+pub struct Mailbox<'d, T: Instance> {
+    _peri: PeripheralRef<'d, T>,
+}
+
+impl<'d, T: Instance> Mailbox<'d, T> {
+    pub fn new(
+        peri: impl Peripheral<P = T> + 'd,
+        _irq: impl interrupt::typelevel::Binding<T::Interrupt, InterruptHandler<T>> + 'd,
+    ) -> Self {
+        into_ref!(peri);
+        // T::enable_and_reset();
+        T::Interrupt::unpend();
+        unsafe { T::Interrupt::enable() };
+        Self { _peri: peri }
+    }
+
+    pub fn mask_channel(&mut self, channel: Channel) {
+        T::regs().mask_channel(channel);
+    }
+    // ... other methods
+}
+
+pub trait Instance: RccEnableReset + 'static {
+    type Interrupt: interrupt::typelevel::Interrupt;
+    fn regs() -> &'static mut MailboxChannelRegs;
+}
+
+/// Interrupt handler.
+pub struct InterruptHandler<T: Instance> {
+    _phantom: PhantomData<T>,
+}
+
+impl<T: Instance> interrupt::typelevel::Handler<T::Interrupt> for InterruptHandler<T> {
+    unsafe fn on_interrupt() {
+        todo!()
+    }
+}
+
+impl Instance for crate::peripherals::MAILBOX1 {
+    type Interrupt = crate::interrupt::typelevel::MAILBOX2_CH1;
+    
+    fn regs() -> &'static mut MailboxChannelRegs {
+        unsafe {
+            &mut *(addrs::MAILBOX2_BASE as *mut MailboxChannelRegs)
+        }
+    }
+}
 // ```
