@@ -24,10 +24,11 @@ const LCPU_IMAGE: &[u32] = &lcpu_image_52x::G_LCPU_BIN_U32;
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     let _p = sifli_hal::init(Default::default());
+    let syscfg_idr = sifli_hal::syscfg::SysCfg::new(_p.HPSYS_CFG).read_idr();
 
     info!("LCPU image installation example");
 
-    match sifli_hal::lcpu::install(LCPU_IMAGE) {
+    match sifli_hal::lcpu::install(&syscfg_idr,LCPU_IMAGE) {
         Ok(()) => info!("Success"),
         Err(err) => error!("Failed: {:?}", err),
     }

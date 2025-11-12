@@ -3,17 +3,34 @@
 //! This module provides access to chip identification information stored in
 //! hardware registers, primarily the `HPSYS_CFG->IDR` register.
 //!
+//! # Architecture
+//!
+//! - **HPSYS_CFG** - System configuration peripheral (contains multiple registers)
+//! - **IDR** - Identification Register within HPSYS_CFG
+//! - **REVID, PID, CID, SID** - Four 8-bit fields in the IDR register
+//!
 //! # Examples
 //!
 //! ```no_run
-//! use sifli_hal::syscfg::{Syscfg, ChipRevision};
+//! use sifli_hal::syscfg::SysCfg;
 //!
-//! // Read chip signature
-//! let sig = Syscfg::read();
-//! let rev = sig.revision();
+//! # let p = sifli_hal::init(Default::default());
+//! // Create driver (takes ownership of HPSYS_CFG peripheral)
+//! let syscfg = SysCfg::new(p.HPSYS_CFG);
 //!
-//! // Check chip version
-//! match rev.patch_type() {
+//! // Read IDR register
+//! let idr = syscfg.read_idr();
+//! println!("REVID: 0x{:02x}", idr.revid);
+//! println!("PID: 0x{:02x}", idr.pid);
+//!
+//! // Parse chip revision from REVID
+//! let revision = idr.revision();
+//! if revision.is_letter_series() {
+//!     // Letter Series specific code
+//! }
+//!
+//! // Check patch type
+//! match revision.patch_type() {
 //!     Some(PatchType::A3) => {
 //!         // Use A3 patch
 //!     }
@@ -26,13 +43,61 @@
 //! }
 //! ```
 
-use crate::pac;
+use crate::{into_ref, pac, peripherals, Peripheral, PeripheralRef};
 
-/// Chip/system identification extracted from `HPSYS_CFG->IDR`.
+/// HPSYS_CFG peripheral driver
 ///
-/// 包含芯片变体与版本的 4 个标识字段。
+/// Provides type-safe access to the HPSYS_CFG peripheral registers
+/// by holding exclusive ownership of the peripheral.
+pub struct SysCfg<'d> {
+    _peri: PeripheralRef<'d, peripherals::HPSYS_CFG>,
+}
+
+impl<'d> SysCfg<'d> {
+    /// Create a new HPSYS_CFG driver
+    ///
+    /// Takes ownership of the HPSYS_CFG peripheral.
+    pub fn new(peri: impl Peripheral<P = peripherals::HPSYS_CFG> + 'd) -> Self {
+        into_ref!(peri);
+        Self { _peri: peri }
+    }
+
+    /// Get register block reference
+    #[inline(always)]
+    fn regs(&self) -> pac::hpsys_cfg::HpsysCfg {
+        pac::HPSYS_CFG
+    }
+
+    /// Read the IDR (Identification Register)
+    ///
+    /// Returns the value of the `HPSYS_CFG->IDR` register containing
+    /// chip identification fields (REVID, PID, CID, SID).
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # let p = sifli_hal::init(Default::default());
+    /// # use sifli_hal::syscfg::SysCfg;
+    /// let syscfg = SysCfg::new(p.HPSYS_CFG);
+    /// let idr = syscfg.read_idr();
+    /// println!("REVID: 0x{:02x}", idr.revid);
+    /// println!("PID: 0x{:02x}", idr.pid);
+    /// ```
+    #[inline]
+    pub fn read_idr(&self) -> Idr {
+        Idr::from_regs(self.regs())
+    }
+}
+
+/// Value of the IDR (Identification Register)
+///
+/// Contains four 8-bit identification fields from `HPSYS_CFG->IDR`:
+/// - **REVID** (bit 0-7): Revision ID
+/// - **PID** (bit 8-15): Package ID
+/// - **CID** (bit 16-23): Company ID
+/// - **SID** (bit 24-31): Series ID
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Syscfg {
+pub struct Idr {
     /// Revision ID (bit[7:0]) - Hardware revision
     ///
     /// - 0x00-0x03: A3 or earlier (including engineering samples)
@@ -50,19 +115,11 @@ pub struct Syscfg {
     pub sid: u8,
 }
 
-impl Syscfg {
-    /// Read chip signature from hardware
-    ///
-    /// Reads the `HPSYS_CFG->IDR` register to get all chip identification fields.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// let sig = Syscfg::read();
-    /// println!("REVID: 0x{:02x}", sig.revid);
-    /// ```
-    pub fn read() -> Self {
-        let idr = pac::HPSYS_CFG.idr().read();
+impl Idr {
+    /// Read IDR register from HPSYS_CFG peripheral
+    #[inline]
+    fn from_regs(regs: pac::hpsys_cfg::HpsysCfg) -> Self {
+        let idr = regs.idr().read();
         Self {
             revid: idr.revid(),
             pid: idr.pid(),
@@ -71,28 +128,46 @@ impl Syscfg {
         }
     }
 
-    /// Get chip revision information
+    /// Parse chip revision from REVID field
     ///
     /// Parses the REVID field into a structured enum with SDK-compatible
     /// validity checks.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # let p = sifli_hal::init(Default::default());
+    /// # use sifli_hal::syscfg::SysCfg;
+    /// let syscfg = SysCfg::new(p.HPSYS_CFG);
+    /// let idr = syscfg.read_idr();
+    /// let revision = idr.revision();
+    /// if revision.is_letter_series() {
+    ///     // Letter Series code
+    /// }
+    /// ```
+    #[inline]
     pub fn revision(&self) -> ChipRevision {
         ChipRevision::from_revid(self.revid)
     }
 
-    /// Get raw IDR register value
+    /// Get raw 32-bit IDR register value
     ///
-    /// Returns the complete 32-bit IDR register value.
-    pub fn idr_raw(&self) -> u32 {
-        ((self.sid as u32) << 24) | ((self.cid as u32) << 16) | ((self.pid as u32) << 8) | (self.revid as u32)
+    /// Returns the complete IDR register value as a single u32.
+    #[inline]
+    pub fn raw(&self) -> u32 {
+        ((self.sid as u32) << 24)
+            | ((self.cid as u32) << 16)
+            | ((self.pid as u32) << 8)
+            | (self.revid as u32)
     }
 }
 
 #[cfg(feature = "defmt")]
-impl defmt::Format for Syscfg {
+impl defmt::Format for Idr {
     fn format(&self, fmt: defmt::Formatter) {
         defmt::write!(
             fmt,
-            "Syscfg {{ revid: 0x{:02x}, pid: 0x{:02x}, cid: 0x{:02x}, sid: 0x{:02x} }}",
+            "Idr {{ revid: 0x{:02x}, pid: 0x{:02x}, cid: 0x{:02x}, sid: 0x{:02x} }}",
             self.revid,
             self.pid,
             self.cid,
@@ -134,6 +209,7 @@ impl ChipRevision {
     /// Parse revision from REVID value
     ///
     /// Implements SDK's `__HAL_SYSCFG_CHECK_REVID()` logic.
+    #[inline]
     pub fn from_revid(revid: u8) -> Self {
         match revid {
             0x00..=0x03 => ChipRevision::A3OrEarlier(revid),
@@ -149,6 +225,7 @@ impl ChipRevision {
     /// - 0x00-0x03 (A3 and earlier)
     /// - 0x07 (A4)
     /// - 0x0F (B4)
+    #[inline]
     pub fn is_valid(&self) -> bool {
         !matches!(self, ChipRevision::Invalid(_))
     }
@@ -156,11 +233,13 @@ impl ChipRevision {
     /// Check if this is a Letter Series revision (A4 or B4)
     ///
     /// Letter Series chips can run LCPU from ROM without loading from flash.
+    #[inline]
     pub fn is_letter_series(&self) -> bool {
         matches!(self, ChipRevision::A4 | ChipRevision::B4)
     }
 
     /// Get human-readable revision name
+    #[inline]
     pub fn name(&self) -> &'static str {
         match self {
             ChipRevision::A3OrEarlier(0x00) => "Pre-A3 (ES v0.0)",
@@ -174,16 +253,6 @@ impl ChipRevision {
         }
     }
 
-    /// Get raw REVID value
-    pub fn raw_value(&self) -> u8 {
-        match self {
-            ChipRevision::A3OrEarlier(v) => *v,
-            ChipRevision::A4 => 0x07,
-            ChipRevision::B4 => 0x0F,
-            ChipRevision::Invalid(v) => *v,
-        }
-    }
-
     /// Get the patch type for this revision
     ///
     /// Matches SDK's `lcpu_ble_patch_install()` logic:
@@ -191,6 +260,7 @@ impl ChipRevision {
     /// - `0x07, 0x0F`: Use Letter Series patch (`lcpu_patch_rev_b.c`)
     ///
     /// Returns `None` for invalid revisions.
+    #[inline]
     pub fn patch_type(&self) -> Option<PatchType> {
         match self {
             ChipRevision::A3OrEarlier(_) => Some(PatchType::A3),

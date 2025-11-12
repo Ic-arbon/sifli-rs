@@ -14,7 +14,6 @@ use embassy_executor::Spawner;
 use embassy_time::Timer;
 use panic_probe as _;
 
-use sifli_hal::gpio;
 use sifli_hal::patch::{Patch, PatchEntry};
 
 #[path = "../patch_data.rs"]
@@ -25,10 +24,11 @@ mod patch_ls;
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     let p = sifli_hal::init(Default::default());
+    let syscfg_idr = sifli_hal::syscfg::SysCfg::new(p.HPSYS_CFG).read_idr();
     let mut patch = Patch::new(p.PATCH);
-    let mut led = gpio::Output::new(p.PA26, gpio::Level::Low);
 
     match patch.install_auto(
+        &syscfg_idr,
         &patch_a3::PATCH_RECORD_U32,
         &patch_a3::PATCH_CODE_U32,
         &patch_ls::PATCH_RECORD_U32,
@@ -70,7 +70,7 @@ async fn main(_spawner: Spawner) {
     }
 
     loop {
-        led.toggle();
-        Timer::after_secs(1).await;
+        info!("alive");
+        Timer::after_secs(10).await;
     }
 }

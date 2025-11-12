@@ -104,11 +104,16 @@ fn read_factory_cfg_id_vbuck(pvdd_v18_en: bool) -> Option<FactoryCfgVbkLdo> {
         return None;
     }
 
-    let syscfg = crate::syscfg::Syscfg::read();
-    let pid = syscfg.pid;
+    // Read IDR register directly (internal use only, no need for SysCfg driver)
+    let idr_val = crate::pac::HPSYS_CFG.idr().read();
+    let pid = idr_val.pid();
+    let revid = idr_val.revid();
     let mut cfg = FactoryCfgVbkLdo::default();
 
-    if syscfg.revision().is_letter_series() {
+    // Check if Letter Series (REVID == 0x07 or 0x0F)
+    let is_letter_series = revid == 0x07 || revid == 0x0F;
+
+    if is_letter_series {
         if (pid == 4 && !pvdd_v18_en) || (pid != 4 && pvdd_v18_en) {
             // 52D 3.3V or 52A 1.8V configuration
             cfg.buck_vos_trim = data[20] & 7;

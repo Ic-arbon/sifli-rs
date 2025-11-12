@@ -10,31 +10,28 @@ use defmt_rtt as _;
 use embassy_executor::Spawner;
 use embassy_time::Timer;
 use panic_probe as _;
-use sifli_hal::syscfg::{ChipRevision, PatchType, Syscfg};
+use sifli_hal::syscfg::{ChipRevision, PatchType, SysCfg};
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
-    let _p = sifli_hal::init(Default::default());
+    let p = sifli_hal::init(Default::default());
 
     info!("========================================");
     info!("SF32LB52x 芯片版本检测");
     info!("========================================");
 
-    // 使用 HAL 的 syscfg 模块读取芯片信息
-    let syscfg = Syscfg::read();
-    let revision = syscfg.revision();
+    // 创建 SYSCFG 驱动并读取 IDR 寄存器
+    let syscfg = SysCfg::new(p.HPSYS_CFG);
+    let idr = syscfg.read_idr();
+    let revision = idr.revision();
 
-    info!("芯片标识信息: {:?}", syscfg);
+    info!("IDR 寄存器: {:?}", idr);
     info!("");
     info!("详细信息:");
-    info!(
-        "  - Revision ID: 0x{:02x} ({})",
-        syscfg.revid,
-        revision.name()
-    );
-    info!("  - Package ID:  0x{:02x}", syscfg.pid);
-    info!("  - Company ID:  0x{:02x}", syscfg.cid);
-    info!("  - Series ID:   0x{:02x}", syscfg.sid);
+    info!("  - Revision ID: 0x{:02x} ({})", idr.revid, revision.name());
+    info!("  - Package ID:  0x{:02x}", idr.pid);
+    info!("  - Company ID:  0x{:02x}", idr.cid);
+    info!("  - Series ID:   0x{:02x}", idr.sid);
     info!("");
     info!("芯片版本: {:?}", revision);
     info!("SDK 有效性检查: {}", revision.is_valid());
@@ -43,7 +40,7 @@ async fn main(_spawner: Spawner) {
     if !revision.is_valid() {
         info!("");
         info!("警告: 无效的芯片版本！");
-        info!("  - REVID 0x{:02x} 不在SDK支持范围内", syscfg.revid);
+        info!("  - REVID 0x{:02x} 不在SDK支持范围内", idr.revid);
         info!("  - 请联系厂商确认版本信息");
     } else {
         info!("");
@@ -91,7 +88,7 @@ async fn main(_spawner: Spawner) {
 
     // 持续闪烁LED表示程序运行正常
     use sifli_hal::gpio;
-    let mut led = gpio::Output::new(_p.PA26, gpio::Level::Low);
+    let mut led = gpio::Output::new(p.PA26, gpio::Level::Low);
 
     loop {
         led.toggle();

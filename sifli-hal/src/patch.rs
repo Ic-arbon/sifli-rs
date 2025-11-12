@@ -8,8 +8,8 @@ use core::{mem, ptr, slice};
 
 use embassy_hal_internal::{into_ref, PeripheralRef};
 
+use crate::syscfg::{Idr, PatchType};
 use crate::{pac, peripherals, Peripheral};
-use crate::syscfg::{Syscfg, PatchType};
 
 /// PATCH 支持的通道数量。
 pub const CHANNEL_COUNT: usize = 32;
@@ -67,6 +67,7 @@ impl defmt::Format for PatchEntry {
 
 /// PATCH 操作过程中可能出现的错误。
 #[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum PatchError {
     /// 补丁条目数量超过硬件可用通道数。
     TooManyEntries,
@@ -109,6 +110,7 @@ impl defmt::Format for PatchError {
 
 /// `HAL_PATCH_install` 语义的错误类型。
 #[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum InstallError {
     /// 记录头部标识不匹配。
     TagMismatch,
@@ -178,12 +180,21 @@ impl<'d> Patch<'d> {
         }
     }
 
+    /// 获取 PATCH 寄存器块的引用
+    #[inline(always)]
+    fn regs(&self) -> pac::patch::Patch {
+        self.regs
+    }
+
     /// 从补丁记录区（`mem_map.h` 中的 `LCPU_PATCH_RECORD_ADDR`）解析并安装补丁。
     ///
     /// # Safety
     ///
-    /// 调用方需确保 LPSYS 补丁记录区可由当前内核访问，且其中内容遵循 SDK
-    /// `PATCH_RECORD_U32` 布局。
+    /// 调用方需确保：
+    /// - LPSYS 补丁记录区（地址 `PATCH_RECORD_SYS_ADDR`）可由当前内核访问
+    /// - 记录区内容遵循 SDK `PATCH_RECORD_U32` 布局（TAG + size + entries）
+    /// - 记录区至少包含 `PATCH_RECORD_SIZE` 字节有效内存
+    /// - 在调用期间，其他代码不会并发访问或修改补丁记录区
     unsafe fn install_from_patch_ram(&mut self) -> Result<InstallReport, InstallError> {
         self.install_from_addr(PATCH_RECORD_SYS_ADDR as *const u32)
     }
@@ -223,27 +234,37 @@ impl<'d> Patch<'d> {
     ///
     /// 返回使用的补丁类型与 `install_from_data` 的结果。
     ///
+    /// # Arguments
+    ///
+    /// - `idr`: Chip identification from `SysCfg::read_idr()`
+    /// - `a3_record`, `a3_code`: A3 patch data
+    /// - `letter_record`, `letter_code`: Letter Series patch data
+    ///
     /// 示例
     /// ```no_run
     /// # use sifli_hal::patch::Patch;
+    /// # use sifli_hal::syscfg::SysCfg;
     /// # let p = sifli_hal::init(Default::default());
     /// # let mut patch = Patch::new(p.PATCH);
+    /// # let syscfg = SysCfg::new(p.HPSYS_CFG);
+    /// # let idr = syscfg.read_idr();
     /// # let a3_record: &[u32] = &[]; let a3_code: &[u32] = &[];
     /// # let ls_record: &[u32] = &[]; let ls_code: &[u32] = &[];
-    /// if let Ok((kind, out)) = patch.install_auto(a3_record, a3_code, ls_record, ls_code) {
+    /// if let Ok((kind, out)) = patch.install_auto(&idr, a3_record, a3_code, ls_record, ls_code) {
     ///     let _ = (kind, out.report.entry_count);
     /// }
     /// ```
     pub fn install_auto(
         &mut self,
+        idr: &Idr,
         a3_record: &[u32],
         a3_code: &[u32],
         letter_record: &[u32],
         letter_code: &[u32],
     ) -> Result<(PatchType, InstallDataOutcome), AutoInstallError> {
-        let rev = Syscfg::read().revision();
+        let rev = idr.revision();
         let Some(kind) = rev.patch_type() else {
-            return Err(AutoInstallError::InvalidRevision(rev.raw_value()));
+            return Err(AutoInstallError::InvalidRevision(idr.revid));
         };
 
         let outcome = match kind {
@@ -264,8 +285,12 @@ impl<'d> Patch<'d> {
     ///
     /// # Safety
     ///
-    /// - 指针必须可读，且至少包含 `PATCH_RECORD_SIZE` 字节有效数据；
-    /// - 补丁记录的结构须与 SDK 保持一致。
+    /// 调用方需确保：
+    /// - `record_addr` 指针有效且已正确对齐（4 字节对齐）
+    /// - 指针指向的内存区域至少包含 `PATCH_RECORD_SIZE` 字节
+    /// - 内存区域在整个函数调用期间保持有效
+    /// - 补丁记录结构符合 SDK 格式：`[TAG: u32, size: u32, entries: [PatchEntry; N]]`
+    /// - 在调用期间，其他代码不会并发访问或修改该内存区域
     unsafe fn install_from_addr(
         &mut self,
         record_addr: *const u32,
@@ -383,27 +408,29 @@ impl<'d> Patch<'d> {
     }
 
     /// 关闭所有补丁通道。
+    #[inline]
     pub fn disable_all(&mut self) {
-        self.regs.cer().write(|w| w.set_ce(0));
-        self.regs.csr().write(|w| w.set_cs(0));
+        let r = self.regs();
+        r.cer().write(|w| w.set_ce(0));
+        r.csr().write(|w| w.set_cs(0));
     }
 
     /// 返回当前使能掩码。
     #[inline]
     pub fn cer(&self) -> u32 {
-        self.regs.cer().read().ce()
+        self.regs().cer().read().ce()
     }
 
     /// 返回当前状态寄存器值。
     #[inline]
     pub fn csr(&self) -> u32 {
-        self.regs.csr().read().cs()
+        self.regs().csr().read().cs()
     }
 
     /// 模块版本号。
     #[inline]
     pub fn version(&self) -> u32 {
-        self.regs.ver().read().id()
+        self.regs().ver().read().id()
     }
 
     fn apply_internal(
@@ -446,16 +473,18 @@ impl<'d> Patch<'d> {
         Ok(applied_mask)
     }
 
+    #[inline]
     fn write_entry(&self, channel: usize, entry: &PatchEntry) {
         let offset = entry.break_addr >> 2;
+        let r = self.regs();
 
-        self.regs.ch(channel).write(|w| {
+        r.ch(channel).write(|w| {
             w.set_addr(offset);
         });
 
         let bit = 1u32 << channel;
-        self.regs.csr().write(|w| w.set_cs(bit));
-        self.regs.cdr().write(|w| w.set_data(entry.data));
+        r.csr().write(|w| w.set_cs(bit));
+        r.cdr().write(|w| w.set_data(entry.data));
     }
 }
 
@@ -471,6 +500,7 @@ pub struct InstallDataOutcome {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum InstallDataError {
     RecordTooLarge { bytes: usize },
     CodeTooLarge { bytes: usize },
@@ -479,6 +509,7 @@ pub enum InstallDataError {
 
 /// 自动安装接口的错误类型。
 #[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum AutoInstallError {
     /// 芯片版本号无效或未知。
     InvalidRevision(u8),
@@ -561,12 +592,10 @@ fn write_record(record_words: &[u32]) -> Result<(), InstallDataError> {
 
     let dst = PATCH_RECORD_SYS_ADDR as *mut u32;
     unsafe {
-        for (idx, value) in record_words.iter().enumerate() {
-            ptr::write_volatile(dst.add(idx), *value);
-        }
-        for idx in words..PATCH_RECORD_WORDS {
-            ptr::write_volatile(dst.add(idx), 0);
-        }
+        // 使用 copy_nonoverlapping 高效复制数据
+        ptr::copy_nonoverlapping(record_words.as_ptr(), dst, words);
+        // 清零剩余区域
+        ptr::write_bytes(dst.add(words), 0, PATCH_RECORD_WORDS - words);
     }
 
     Ok(())
@@ -582,12 +611,10 @@ fn write_code(code_words: &[u32]) -> Result<(), InstallDataError> {
 
     let dest = PATCH_RAM_SYS_BASE as *mut u32;
     unsafe {
-        for (idx, value) in code_words.iter().enumerate() {
-            ptr::write_volatile(dest.add(idx), *value);
-        }
-        for idx in words..PATCH_CODE_WORDS {
-            ptr::write_volatile(dest.add(idx), 0);
-        }
+        // 使用 copy_nonoverlapping 高效复制数据
+        ptr::copy_nonoverlapping(code_words.as_ptr(), dest, words);
+        // 清零剩余区域
+        ptr::write_bytes(dest.add(words), 0, PATCH_CODE_WORDS - words);
     }
 
     Ok(())
