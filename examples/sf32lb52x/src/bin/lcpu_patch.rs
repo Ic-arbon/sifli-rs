@@ -3,9 +3,9 @@
 
 //! 最小化的补丁加载测试程序。
 //!
-//! - 将 SDK 中的补丁记录与补丁代码写入补丁 RAM；
-//! - 调用 HAL 的 `install_from_data` 完成安装；
-//! - 打印补丁条目数、通道掩码、CER 以及补丁 RAM 首字；
+//! - 使用 HAL 的 `auto_select()` 自动识别芯片版本并安装补丁；
+//! - 打印补丁条目数、通道掩码、补丁 RAM 首字；
+//! - 测试保存和恢复功能；
 //! - 出错时立即返回并输出 warn；
 
 use defmt::{info, warn};
@@ -14,7 +14,7 @@ use embassy_executor::Spawner;
 use embassy_time::Timer;
 use panic_probe as _;
 
-use sifli_hal::patch::{Patch, PatchEntry};
+use sifli_hal::patch::{Patch, PatchEntry, PATCH_RAM_SYS_BASE};
 
 #[path = "../patch_data.rs"]
 mod patch_a3;
@@ -24,49 +24,92 @@ mod patch_ls;
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     let p = sifli_hal::init(Default::default());
-    let syscfg_idr = sifli_hal::syscfg::SysCfg::new(p.HPSYS_CFG).read_idr();
+    let syscfg = sifli_hal::syscfg::SysCfg::new(p.HPSYS_CFG);
+    let idr = syscfg.read_idr();
     let mut patch = Patch::new(p.PATCH);
 
-    match patch.install_auto(
-        &syscfg_idr,
-        &patch_a3::PATCH_RECORD_U32,
-        &patch_a3::PATCH_CODE_U32,
-        &patch_ls::PATCH_RECORD_U32,
-        &patch_ls::PATCH_CODE_U32,
-    ) {
-        Ok((patch_type, outcome)) => {
-            info!(
-                "patch_type={}, entries={}, mask=0x{:08x}, cer=0x{:08x}, first=0x{:08x}",
-                patch_type,
-                outcome.report.entry_count,
-                outcome.report.applied_mask,
-                patch.cer(),
-                outcome.first_word
-            );
-
-            // Test save(): capture current patch entries and CER
-            let mut saved: [PatchEntry; 32] = [PatchEntry::default(); 32];
-            match patch.save(&mut saved) {
-                Ok((count, cer)) => {
-                    info!("save: count={}, cer=0x{:08x}", count, cer);
-                    // Re-apply using saved table to validate semantics
-                    patch.disable_all();
-                    match patch.apply_with_mask(&saved[..count], cer) {
-                        Ok(mask) => info!(
-                            "restore: mask=0x{:08x}, cer=0x{:08x}",
-                            mask,
-                            patch.cer()
-                        ),
-                        Err(e) => warn!("restore failed: {:?}", e),
-                    }
-                }
-                Err(e) => warn!("save failed: {:?}", e),
-            }
-        }
-        Err(err) => {
-            warn!("auto install failed: {:?}", err);
+    // 自动选择版本并安装
+    let report = match patch
+        .auto_select(
+            &idr,
+            &patch_a3::PATCH_RECORD_U32,
+            &patch_a3::PATCH_CODE_U32,
+            &patch_ls::PATCH_RECORD_U32,
+            &patch_ls::PATCH_CODE_U32,
+        )
+        .install()
+    {
+        Ok(r) => r,
+        Err(e) => {
+            warn!("auto install failed: {:?}", e);
             return;
         }
+    };
+
+    // 读取补丁 RAM 首字（验证代码已写入）
+    let first_word = unsafe { core::ptr::read_volatile(PATCH_RAM_SYS_BASE as *const u32) };
+
+    info!(
+        "Install OK: {} entries, {} channels enabled, first_word=0x{:08x}",
+        report.count,
+        report.mask.count(),
+        first_word
+    );
+
+    // 打印启用的通道
+    info!("Enabled channels:");
+    for ch in report.mask.enabled_channels() {
+        info!("  - Channel {}", ch);
+    }
+
+    // 测试保存功能
+    let mut saved = [PatchEntry::default(); 32];
+    let (count, saved_mask) = match patch.save(&mut saved) {
+        Ok(result) => result,
+        Err(e) => {
+            warn!("save failed: {:?}", e);
+            return;
+        }
+    };
+
+    info!(
+        "Saved: {} entries, mask={:?}, cer={:?}",
+        count,
+        saved_mask,
+        patch.channel_mask()
+    );
+
+    // 测试恢复功能
+    patch.disable_all();
+    info!("Disabled all channels, cer={:?}", patch.channel_mask());
+
+    let restore_report = match patch
+        .with_entries(&saved[..count])
+        .with_mask(saved_mask)
+        .install()
+    {
+        Ok(r) => r,
+        Err(e) => {
+            warn!("restore failed: {:?}", e);
+            return;
+        }
+    };
+
+    info!(
+        "Restored: {} entries, {} channels, cer={:?}",
+        restore_report.count,
+        restore_report.mask.count(),
+        patch.channel_mask()
+    );
+
+    // 验证恢复结果
+    if restore_report.mask == saved_mask {
+        info!("Restore verification PASSED");
+    } else {
+        warn!(
+            "Restore verification FAILED: expected={:?}, actual={:?}",
+            saved_mask, restore_report.mask
+        );
     }
 
     loop {
