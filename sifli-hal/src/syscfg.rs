@@ -14,12 +14,8 @@
 //! ```no_run
 //! use sifli_hal::syscfg::SysCfg;
 //!
-//! # let p = sifli_hal::init(Default::default());
-//! // Create driver (takes ownership of HPSYS_CFG peripheral)
-//! let syscfg = SysCfg::new(p.HPSYS_CFG);
-//!
-//! // Read IDR register
-//! let idr = syscfg.read_idr();
+//! // Read IDR register (no peripheral ownership required)
+//! let idr = SysCfg::read_idr();
 //! println!("REVID: 0x{:02x}", idr.revid);
 //! println!("PID: 0x{:02x}", idr.pid);
 //!
@@ -62,30 +58,26 @@ impl<'d> SysCfg<'d> {
         Self { _peri: peri }
     }
 
-    /// Get register block reference
-    #[inline(always)]
-    fn regs(&self) -> pac::hpsys_cfg::HpsysCfg {
-        pac::HPSYS_CFG
-    }
-
     /// Read the IDR (Identification Register)
     ///
     /// Returns the value of the `HPSYS_CFG->IDR` register containing
     /// chip identification fields (REVID, PID, CID, SID).
     ///
+    /// This is an associated function (not a method) because IDR is a read-only
+    /// register that doesn't require exclusive peripheral access.
+    ///
     /// # Examples
     ///
     /// ```no_run
-    /// # let p = sifli_hal::init(Default::default());
     /// # use sifli_hal::syscfg::SysCfg;
-    /// let syscfg = SysCfg::new(p.HPSYS_CFG);
-    /// let idr = syscfg.read_idr();
+    /// // Read IDR without needing peripheral ownership
+    /// let idr = SysCfg::read_idr();
     /// println!("REVID: 0x{:02x}", idr.revid);
     /// println!("PID: 0x{:02x}", idr.pid);
     /// ```
     #[inline]
-    pub fn read_idr(&self) -> Idr {
-        Idr::from_regs(self.regs())
+    pub fn read_idr() -> Idr {
+        Idr::from_regs(pac::HPSYS_CFG)
     }
 }
 
@@ -136,10 +128,8 @@ impl Idr {
     /// # Examples
     ///
     /// ```no_run
-    /// # let p = sifli_hal::init(Default::default());
     /// # use sifli_hal::syscfg::SysCfg;
-    /// let syscfg = SysCfg::new(p.HPSYS_CFG);
-    /// let idr = syscfg.read_idr();
+    /// let idr = SysCfg::read_idr();
     /// let revision = idr.revision();
     /// if revision.is_letter_series() {
     ///     // Letter Series code

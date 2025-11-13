@@ -147,11 +147,10 @@ impl<'d> Patch<'d> {
     /// # use sifli_hal::syscfg::SysCfg;
     /// # let p = sifli_hal::init(Default::default());
     /// # let mut patch = Patch::new(p.PATCH);
-    /// # let syscfg = SysCfg::new(p.HPSYS_CFG);
-    /// # let idr = syscfg.read_idr();
     /// # let a3_rec: &[u32] = &[]; let a3_code: &[u32] = &[];
     /// # let ls_rec: &[u32] = &[]; let ls_code: &[u32] = &[];
-    /// // 自动选择版本安装
+    /// // 读取芯片信息并自动选择版本安装
+    /// let idr = SysCfg::read_idr();
     /// let report = patch
     ///     .auto_select(&idr, a3_rec, a3_code, ls_rec, ls_code)
     ///     .install()?;
@@ -333,7 +332,7 @@ fn parse_record(words: &[u32]) -> Result<&[PatchEntry], Error> {
     if words.len() < memory::PATCH_HEADER_WORDS {
         return Err(Error::InsufficientData {
             required: memory::PATCH_HEADER_WORDS * mem::size_of::<u32>(),
-            available: words.len() * mem::size_of::<u32>(),
+            available: core::mem::size_of_val(words),
         });
     }
 
@@ -347,7 +346,7 @@ fn parse_record(words: &[u32]) -> Result<&[PatchEntry], Error> {
 
     // 解析大小
     let size_bytes = words[1] as usize;
-    if size_bytes % mem::size_of::<PatchEntry>() != 0 {
+    if !size_bytes.is_multiple_of(mem::size_of::<PatchEntry>()) {
         return Err(Error::MisalignedRecordSize { size: size_bytes });
     }
 
@@ -357,7 +356,7 @@ fn parse_record(words: &[u32]) -> Result<&[PatchEntry], Error> {
     if words.len() < required_words {
         return Err(Error::InsufficientData {
             required: required_words * mem::size_of::<u32>(),
-            available: words.len() * mem::size_of::<u32>(),
+            available: core::mem::size_of_val(words),
         });
     }
 

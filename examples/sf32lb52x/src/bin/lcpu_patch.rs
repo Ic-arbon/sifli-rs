@@ -24,8 +24,7 @@ mod patch_ls;
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     let p = sifli_hal::init(Default::default());
-    let syscfg = sifli_hal::syscfg::SysCfg::new(p.HPSYS_CFG);
-    let idr = syscfg.read_idr();
+    let idr = sifli_hal::syscfg::SysCfg::read_idr();
     let mut patch = Patch::new(p.PATCH);
 
     // 自动选择版本并安装

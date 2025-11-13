@@ -20,9 +20,8 @@ async fn main(_spawner: Spawner) {
     info!("SF32LB52x 芯片版本检测");
     info!("========================================");
 
-    // 创建 SYSCFG 驱动并读取 IDR 寄存器
-    let syscfg = SysCfg::new(p.HPSYS_CFG);
-    let idr = syscfg.read_idr();
+    // 读取 IDR 寄存器（无需外设所有权）
+    let idr = SysCfg::read_idr();
     let revision = idr.revision();
 
     info!("IDR 寄存器: {:?}", idr);
