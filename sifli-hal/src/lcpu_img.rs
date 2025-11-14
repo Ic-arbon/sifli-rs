@@ -51,8 +51,7 @@ pub fn install(idr: &Idr, image_words: &[u32]) -> Result<(), Error> {
     if !revision.is_valid() {
         let revid = idr.revid;
 
-        #[cfg(feature = "defmt")]
-        defmt::warn!("Invalid chip revision: 0x{:02x}", revid);
+        warn!("Invalid chip revision: 0x{:02x}", revid);
 
         return Err(Error::InvalidRevision { revid });
     }
@@ -61,8 +60,7 @@ pub fn install(idr: &Idr, image_words: &[u32]) -> Result<(), Error> {
     if !revision.is_letter_series() {
         let size_bytes = image_words.len() * core::mem::size_of::<u32>();
         if size_bytes > LPSYS_RAM_SIZE {
-            #[cfg(feature = "defmt")]
-            defmt::error!(
+            error!(
                 "LCPU image too large: {} bytes (max {} bytes)",
                 size_bytes,
                 LPSYS_RAM_SIZE
@@ -74,18 +72,15 @@ pub fn install(idr: &Idr, image_words: &[u32]) -> Result<(), Error> {
             });
         }
 
-        #[cfg(feature = "defmt")]
-        defmt::debug!("Installing LCPU image: {} bytes", size_bytes);
+        debug!("Installing LCPU image: {} bytes", size_bytes);
 
         unsafe {
             install_image_unsafe(image_words);
         }
 
-        #[cfg(feature = "defmt")]
-        defmt::info!("LCPU image installed successfully");
+        info!("LCPU image installed successfully");
     } else {
-        #[cfg(feature = "defmt")]
-        defmt::debug!("Letter Series detected, skipping image install");
+        debug!("Letter Series detected, skipping image install");
     }
 
     Ok(())

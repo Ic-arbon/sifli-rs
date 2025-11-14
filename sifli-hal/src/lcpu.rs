@@ -310,77 +310,63 @@ pub enum CoreId {
 ///
 /// - SDK: `lcpu_power_on()` in `bf0_lcpu_init.c:163`
 pub fn power_on(config: &LcpuConfig) -> Result<(), LcpuError> {
-    #[cfg(feature = "defmt")]
-    defmt::info!("Starting LCPU power-on sequence");
+    info!("Starting LCPU power-on sequence");
 
     // 1. 唤醒 LCPU (bf0_lcpu_init.c:165)
-    #[cfg(feature = "defmt")]
-    defmt::debug!("Step 1: Waking up LCPU");
+    debug!("Step 1: Waking up LCPU");
     wake_core(CoreId::Lcpu)?;
 
     // 2. 复位并停表 LCPU (bf0_lcpu_init.c:166)
-    #[cfg(feature = "defmt")]
-    defmt::debug!("Step 2: Resetting and halting LCPU");
+    debug!("Step 2: Resetting and halting LCPU");
     reset_and_halt_lcpu()?;
 
     // 3. ROM 配置 (bf0_lcpu_init.c:168)
-    #[cfg(feature = "defmt")]
-    defmt::debug!("Step 3: Configuring ROM parameters");
+    debug!("Step 3: Configuring ROM parameters");
     lcpu_rom_config()?;
 
     // 4. 限频检查 (bf0_lcpu_init.c:170-176)
     if !config.skip_frequency_check {
-        #[cfg(feature = "defmt")]
-        defmt::debug!("Step 4: Checking LCPU frequency (must be ≤ 24MHz during loading)");
+        debug!("Step 4: Checking LCPU frequency (must be ≤ 24MHz during loading)");
         check_lcpu_frequency()?;
     } else {
-        #[cfg(feature = "defmt")]
-        defmt::warn!("Step 4: Skipping frequency check (as requested by config)");
+        warn!("Step 4: Skipping frequency check (as requested by config)");
     }
 
     // 5. 装载镜像 (bf0_lcpu_init.c:178-182) - 仅 A3 及之前
     let idr = syscfg::SysCfg::read_idr();
     if !idr.revision().is_letter_series() {
-        #[cfg(feature = "defmt")]
-        defmt::debug!("Step 5: Installing LCPU firmware image (A3/earlier)");
+        debug!("Step 5: Installing LCPU firmware image (A3/earlier)");
 
         if let Some(firmware) = config.firmware {
             lcpu_img::install(&idr, firmware)?;
         } else {
-            #[cfg(feature = "defmt")]
-            defmt::error!("Firmware required for A3 and earlier revisions");
+            error!("Firmware required for A3 and earlier revisions");
             return Err(LcpuError::FirmwareMissing);
         }
     } else {
-        #[cfg(feature = "defmt")]
-        defmt::debug!("Step 5: Skipping image install (Letter Series, firmware in ROM)");
+        debug!("Step 5: Skipping image install (Letter Series, firmware in ROM)");
     }
 
     // 6. 配置启动地址 (bf0_lcpu_init.c:184)
-    #[cfg(feature = "defmt")]
-    defmt::debug!(
+    debug!(
         "Step 6: Configuring LCPU start address (0x{:08X})",
         LCPU_CODE_START_ADDR
     );
     lpaon::LpAon::configure_lcpu_start();
 
     // 7. 安装补丁与 RF 校准 (bf0_lcpu_init.c:185)
-    #[cfg(feature = "defmt")]
-    defmt::debug!("Step 7: Installing patches and RF calibration");
+    debug!("Step 7: Installing patches and RF calibration");
     install_patch_and_calibrate(config, &idr)?;
 
     // 8. 释放 LCPU 运行 (bf0_lcpu_init.c:186)
-    #[cfg(feature = "defmt")]
-    defmt::debug!("Step 8: Releasing LCPU to run");
+    debug!("Step 8: Releasing LCPU to run");
     release_lcpu()?;
 
     // 9. 收尾 (bf0_lcpu_init.c:187)
-    #[cfg(feature = "defmt")]
-    defmt::debug!("Step 9: Cleaning up (cancel LP_ACTIVE request)");
+    debug!("Step 9: Cleaning up (cancel LP_ACTIVE request)");
     cancel_lp_active_request()?;
 
-    #[cfg(feature = "defmt")]
-    defmt::info!("LCPU power-on sequence completed successfully");
+    info!("LCPU power-on sequence completed successfully");
 
     Ok(())
 }
@@ -393,13 +379,11 @@ pub fn power_on(config: &LcpuConfig) -> Result<(), LcpuError> {
 ///
 /// - SDK: `lcpu_power_off()` in `bf0_lcpu_init.c:196`
 pub fn power_off() -> Result<(), LcpuError> {
-    #[cfg(feature = "defmt")]
-    defmt::info!("Powering off LCPU");
+    info!("Powering off LCPU");
 
     reset_and_halt_lcpu()?;
 
-    #[cfg(feature = "defmt")]
-    defmt::info!("LCPU powered off successfully");
+    info!("LCPU powered off successfully");
 
     Ok(())
 }
@@ -493,8 +477,7 @@ fn lcpu_rom_config() -> Result<(), LcpuError> {
     // - 看门狗状态/超时/时钟
     // - BT RC 校准开关
     // - A4+: HCPU→LCPU TX 队列基址
-    #[cfg(feature = "defmt")]
-    defmt::debug!("Using default ROM configuration");
+    debug!("Using default ROM configuration");
 
     todo!("lcpu_rom_config: 实现默认 ROM 配置")
 }
@@ -534,19 +517,16 @@ fn install_patch_and_calibrate(config: &LcpuConfig, idr: &Idr) -> Result<(), Lcp
 
     // 根据版本选择补丁数据
     let patch_data = if revision.is_letter_series() {
-        #[cfg(feature = "defmt")]
-        defmt::debug!("Using Letter Series patch data");
+        debug!("Using Letter Series patch data");
         config.patch_letter
     } else {
-        #[cfg(feature = "defmt")]
-        defmt::debug!("Using A3 patch data");
+        debug!("Using A3 patch data");
         config.patch_a3
     };
 
     // 安装补丁（如果提供了数据）
     if let Some(data) = patch_data {
-        #[cfg(feature = "defmt")]
-        defmt::debug!(
+        debug!(
             "Installing patches (record: {} words, code: {} words)",
             data.record.len(),
             data.code.len()
@@ -556,21 +536,18 @@ fn install_patch_and_calibrate(config: &LcpuConfig, idr: &Idr) -> Result<(), Lcp
         // 参考: patch::Patch::with_data(record, code).install()
         todo!("install_patch_and_calibrate: 调用 patch 模块安装补丁")
     } else {
-        #[cfg(feature = "defmt")]
-        defmt::warn!("No patch data provided, skipping patch installation");
+        warn!("No patch data provided, skipping patch installation");
     }
 
     // RF 校准
     if !config.disable_rf_cal {
-        #[cfg(feature = "defmt")]
-        defmt::debug!("Performing RF calibration");
+        debug!("Performing RF calibration");
 
         // TODO: 调用 RF 校准函数
         // 参考: bt_rf_cal() in SDK
         todo!("install_patch_and_calibrate: 实现 RF 校准")
     } else {
-        #[cfg(feature = "defmt")]
-        defmt::warn!("RF calibration disabled by config");
+        warn!("RF calibration disabled by config");
     }
 
     Ok(())

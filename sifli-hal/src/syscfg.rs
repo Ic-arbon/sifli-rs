@@ -89,6 +89,7 @@ impl<'d> SysCfg<'d> {
 /// - **CID** (bit 16-23): Company ID
 /// - **SID** (bit 24-31): Series ID
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Idr {
     /// Revision ID (bit[7:0]) - Hardware revision
     ///
@@ -149,20 +150,6 @@ impl Idr {
             | ((self.cid as u32) << 16)
             | ((self.pid as u32) << 8)
             | (self.revid as u32)
-    }
-}
-
-#[cfg(feature = "defmt")]
-impl defmt::Format for Idr {
-    fn format(&self, fmt: defmt::Formatter) {
-        defmt::write!(
-            fmt,
-            "Idr {{ revid: 0x{:02x}, pid: 0x{:02x}, cid: 0x{:02x}, sid: 0x{:02x} }}",
-            self.revid,
-            self.pid,
-            self.cid,
-            self.sid
-        );
     }
 }
 
@@ -278,6 +265,7 @@ impl defmt::Format for ChipRevision {
 ///
 /// Different chip revisions require different LCPU ROM patches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PatchType {
     /// A3 patch from `lcpu_patch.c`
     ///
@@ -290,16 +278,6 @@ pub enum PatchType {
     /// Used for REVID 0x07 (A4) and 0x0F (B4).
     /// LCPU can run directly from ROM.
     LetterSeries,
-}
-
-#[cfg(feature = "defmt")]
-impl defmt::Format for PatchType {
-    fn format(&self, fmt: defmt::Formatter) {
-        match self {
-            PatchType::A3 => defmt::write!(fmt, "A3"),
-            PatchType::LetterSeries => defmt::write!(fmt, "LetterSeries"),
-        }
-    }
 }
 
 // ============================================================================
