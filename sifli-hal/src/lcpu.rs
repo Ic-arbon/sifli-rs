@@ -333,7 +333,7 @@ pub fn power_on(config: &LcpuConfig) -> Result<(), LcpuError> {
     }
 
     // 5. 装载镜像 (bf0_lcpu_init.c:178-182) - 仅 A3 及之前
-    let idr = syscfg::SysCfg::read_idr();
+    let idr = syscfg::read_idr();
     if !idr.revision().is_letter_series() {
         debug!("Step 5: Installing LCPU firmware image (A3/earlier)");
 
@@ -512,7 +512,20 @@ fn check_lcpu_frequency() -> Result<(), LcpuError> {
 /// 安装补丁与 RF 校准
 ///
 /// 根据芯片版本选择对应的补丁数据并安装，然后执行 RF 校准。
-fn install_patch_and_calibrate(config: &LcpuConfig, idr: &Idr) -> Result<(), LcpuError> {
+///
+/// # 参数
+///
+/// - `config`: LCPU 配置，包含补丁数据
+/// - `idr`: 芯片识别信息（通过 [`syscfg::read_idr()`] 获取）
+///
+/// # 错误
+///
+/// - [`LcpuError::PatchInstall`]: 补丁安装失败
+///
+/// # 注意
+///
+/// 本函数临时公开，用于测试补丁安装功能。未来可能移回私有。
+pub fn install_patch_and_calibrate(config: &LcpuConfig, idr: &Idr) -> Result<(), LcpuError> {
     let revision = idr.revision();
 
     // 根据版本选择补丁数据
@@ -532,9 +545,8 @@ fn install_patch_and_calibrate(config: &LcpuConfig, idr: &Idr) -> Result<(), Lcp
             data.code.len()
         );
 
-        // TODO: 使用 patch 模块安装补丁
-        // 参考: patch::Patch::with_data(record, code).install()
-        todo!("install_patch_and_calibrate: 调用 patch 模块安装补丁")
+        // 使用 patch 模块安装补丁
+        patch::install(idr, data.record, data.code)?;
     } else {
         warn!("No patch data provided, skipping patch installation");
     }

@@ -12,10 +12,10 @@
 //! # Examples
 //!
 //! ```no_run
-//! use sifli_hal::syscfg::SysCfg;
+//! use sifli_hal::syscfg;
 //!
-//! // Read IDR register (no peripheral ownership required)
-//! let idr = SysCfg::read_idr();
+//! // Read IDR register
+//! let idr = syscfg::read_idr();
 //! println!("REVID: 0x{:02x}", idr.revid);
 //! println!("PID: 0x{:02x}", idr.pid);
 //!
@@ -24,61 +24,37 @@
 //! if revision.is_letter_series() {
 //!     // Letter Series specific code
 //! }
-//!
-//! // Check patch type
-//! match revision.patch_type() {
-//!     Some(PatchType::A3) => {
-//!         // Use A3 patch
-//!     }
-//!     Some(PatchType::LetterSeries) => {
-//!         // Use Letter Series patch
-//!     }
-//!     None => {
-//!         // Invalid revision
-//!     }
-//! }
 //! ```
 
-use crate::{into_ref, pac, peripherals, Peripheral, PeripheralRef};
+use crate::pac;
 
-/// HPSYS_CFG peripheral driver
+/// Read the IDR (Identification Register)
 ///
-/// Provides type-safe access to the HPSYS_CFG peripheral registers
-/// by holding exclusive ownership of the peripheral.
-pub struct SysCfg<'d> {
-    _peri: PeripheralRef<'d, peripherals::HPSYS_CFG>,
-}
-
-impl<'d> SysCfg<'d> {
-    /// Create a new HPSYS_CFG driver
-    ///
-    /// Takes ownership of the HPSYS_CFG peripheral.
-    pub fn new(peri: impl Peripheral<P = peripherals::HPSYS_CFG> + 'd) -> Self {
-        into_ref!(peri);
-        Self { _peri: peri }
-    }
-
-    /// Read the IDR (Identification Register)
-    ///
-    /// Returns the value of the `HPSYS_CFG->IDR` register containing
-    /// chip identification fields (REVID, PID, CID, SID).
-    ///
-    /// This is an associated function (not a method) because IDR is a read-only
-    /// register that doesn't require exclusive peripheral access.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// # use sifli_hal::syscfg::SysCfg;
-    /// // Read IDR without needing peripheral ownership
-    /// let idr = SysCfg::read_idr();
-    /// println!("REVID: 0x{:02x}", idr.revid);
-    /// println!("PID: 0x{:02x}", idr.pid);
-    /// ```
-    #[inline]
-    pub fn read_idr() -> Idr {
-        Idr::from_regs(pac::HPSYS_CFG)
-    }
+/// Returns the value of the `HPSYS_CFG->IDR` register containing
+/// chip identification fields (REVID, PID, CID, SID).
+///
+/// This function directly accesses the hardware register without requiring
+/// peripheral ownership, as IDR is a read-only register.
+///
+/// # Examples
+///
+/// ```no_run
+/// use sifli_hal::syscfg;
+///
+/// // Read IDR without needing peripheral ownership
+/// let idr = syscfg::read_idr();
+/// println!("REVID: 0x{:02x}", idr.revid);
+/// println!("PID: 0x{:02x}", idr.pid);
+///
+/// // Check chip revision
+/// let revision = idr.revision();
+/// if revision.is_letter_series() {
+///     println!("Letter Series chip detected");
+/// }
+/// ```
+#[inline]
+pub fn read_idr() -> Idr {
+    Idr::from_regs(pac::HPSYS_CFG)
 }
 
 /// Value of the IDR (Identification Register)
@@ -229,22 +205,6 @@ impl ChipRevision {
             ChipRevision::Invalid(_) => "Invalid",
         }
     }
-
-    /// Get the patch type for this revision
-    ///
-    /// Matches SDK's `lcpu_ble_patch_install()` logic:
-    /// - `<= 0x03`: Use A3 patch (`lcpu_patch.c`)
-    /// - `0x07, 0x0F`: Use Letter Series patch (`lcpu_patch_rev_b.c`)
-    ///
-    /// Returns `None` for invalid revisions.
-    #[inline]
-    pub fn patch_type(&self) -> Option<PatchType> {
-        match self {
-            ChipRevision::A3OrEarlier(_) => Some(PatchType::A3),
-            ChipRevision::A4 | ChipRevision::B4 => Some(PatchType::LetterSeries),
-            ChipRevision::Invalid(_) => None,
-        }
-    }
 }
 
 #[cfg(feature = "defmt")]
@@ -259,25 +219,6 @@ impl defmt::Format for ChipRevision {
             ChipRevision::Invalid(id) => defmt::write!(fmt, "Invalid(0x{:02x})", id),
         }
     }
-}
-
-/// LCPU patch type corresponding to chip revision
-///
-/// Different chip revisions require different LCPU ROM patches.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum PatchType {
-    /// A3 patch from `lcpu_patch.c`
-    ///
-    /// Used for REVID <= 0x03 (A3 and earlier revisions).
-    /// Requires loading LCPU image from Flash.
-    A3,
-
-    /// Letter Series patch from `lcpu_patch_rev_b.c`
-    ///
-    /// Used for REVID 0x07 (A4) and 0x0F (B4).
-    /// LCPU can run directly from ROM.
-    LetterSeries,
 }
 
 // ============================================================================
