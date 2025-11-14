@@ -24,13 +24,17 @@ const LCPU_IMAGE: &[u32] = &lcpu_image_52x::G_LCPU_BIN_U32;
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     let _p = sifli_hal::init(Default::default());
-    let syscfg_idr = sifli_hal::syscfg::SysCfg::read_idr();
 
     info!("LCPU image installation example");
 
+    // 读取芯片版本信息
+    let syscfg_idr = sifli_hal::syscfg::read_idr();
+    info!("Chip revision: {:?} ({})", syscfg_idr.revision(), syscfg_idr.revision().name());
+
+    // 根据版本自动决定是否安装镜像
     match sifli_hal::lcpu_img::install(&syscfg_idr, LCPU_IMAGE) {
-        Ok(()) => info!("Success"),
-        Err(err) => error!("Failed: {:?}", err),
+        Ok(()) => info!("LCPU image installation: Success"),
+        Err(err) => error!("LCPU image installation failed: {:?}", err),
     }
 
     loop {

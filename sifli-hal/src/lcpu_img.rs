@@ -58,7 +58,7 @@ pub fn install(idr: &Idr, image_words: &[u32]) -> Result<(), Error> {
 
     // 仅 A3 及更早的版本需要写入 LCPU 镜像
     if !revision.is_letter_series() {
-        let size_bytes = image_words.len() * core::mem::size_of::<u32>();
+        let size_bytes = core::mem::size_of_val(image_words);
         if size_bytes > LPSYS_RAM_SIZE {
             error!(
                 "LCPU image too large: {} bytes (max {} bytes)",

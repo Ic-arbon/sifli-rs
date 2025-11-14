@@ -1,7 +1,21 @@
 //! LPAON (Low-Power Always-On) HAL driver
+//! 注意！文档由AI生成！
 //!
 //! LPAON 模块提供 LPSYS (Low-Power Subsystem) Always-On 外设的硬件抽象，
 //! 主要用于配置 LCPU 启动地址。
+//!
+//! ## 使用示例
+//!
+//! ```no_run
+//! use sifli_hal::lpaon::LpAon;
+//!
+//! // 配置 LCPU 启动地址（无需参数，自动从固定地址读取）
+//! LpAon::configure_lcpu_start();
+//!
+//! // 读取当前配置的启动向量
+//! let (sp, pc) = LpAon::read_start_vector();
+//! println!("SP: {:#010x}, PC: {:#010x}", sp, pc);
+//! ```
 //!
 //! ## 功能特性
 //!
@@ -31,19 +45,6 @@
 //!
 //! `configure_lcpu_start()` 会从固定地址 `0x20400000` 读取这两个值，
 //! 并写入 LPAON 寄存器，以便硬件在 LCPU 启动/唤醒时自动加载。
-//!
-//! ## 使用示例
-//!
-//! ```no_run
-//! use sifli_hal::lpaon::LpAon;
-//!
-//! // 配置 LCPU 启动地址（无需参数，自动从固定地址读取）
-//! LpAon::configure_lcpu_start();
-//!
-//! // 读取当前配置的启动向量
-//! let (sp, pc) = LpAon::read_start_vector();
-//! println!("SP: {:#010x}, PC: {:#010x}", sp, pc);
-//! ```
 //!
 //! ## Safety 注意事项
 //!
