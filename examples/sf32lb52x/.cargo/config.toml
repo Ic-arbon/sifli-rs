@@ -12,7 +12,7 @@ runner = '.cargo/flash_and_debug.sh'
 target = "thumbv8m.main-none-eabihf"
 
 [env]
-DEFMT_LOG = "info"
+DEFMT_LOG = "debug"
 SIFLI_UART_DEBUG = "1"
 # SIFLI_SFTOOL_PORT = "YOUR_PORT_HERE"
 SIFLI_SFTOOL_PORT = "/dev/tty.usbmodem5ABA0718641"

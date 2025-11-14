@@ -189,6 +189,16 @@ pub enum LcpuError {
 
     /// ROM 配置错误
     RomConfigError,
+
+    /// 引用计数溢出
+    ///
+    /// 超过最大允许的 LCPU 引用计数（20）。
+    RefCountOverflow,
+
+    /// 唤醒核心超时
+    ///
+    /// 等待 LP_ACTIVE 信号超时。
+    WakeCoreTimeout,
 }
 
 impl From<lcpu_img::Error> for LcpuError {
@@ -233,6 +243,12 @@ impl defmt::Format for LcpuError {
             Self::RomConfigError => {
                 defmt::write!(fmt, "RomConfigError");
             }
+            Self::RefCountOverflow => {
+                defmt::write!(fmt, "RefCountOverflow");
+            }
+            Self::WakeCoreTimeout => {
+                defmt::write!(fmt, "WakeCoreTimeout");
+            }
         }
     }
 }
@@ -245,12 +261,168 @@ impl defmt::Format for LcpuError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum CoreId {
+    Default = 0,
     /// HCPU (High-performance CPU)
-    Hcpu = 0,
+    Hcpu = 1,
     /// LCPU (Low-power CPU)
-    Lcpu = 1,
-    /// BCPU (Bluetooth CPU，部分型号可用)
-    Bcpu = 2,
+    Lcpu = 2,
+    /// ACPU (58x)
+    Acpu = 3,
+}
+
+//=============================================================================
+// LCPU 活跃状态守卫与引用计数
+//=============================================================================
+
+use core::sync::atomic::{AtomicU8, Ordering};
+
+/// LCPU 唤醒引用计数器
+///
+/// 追踪有多少个模块正在使用 LCPU。
+/// 仅当计数归零时才真正清除 HP2LP_REQ。
+static LCPU_WAKEUP_REF_CNT: AtomicU8 = AtomicU8::new(0);
+
+/// 引用计数最大值（来自 SDK）
+const MAX_REF_COUNT: u8 = 20;
+
+/// LCPU 活跃状态守卫
+///
+/// 采用 RAII 模式管理 LCPU 的唤醒与睡眠。
+///
+/// - 创建时：执行 wake_core 逻辑（置位 HP2LP_REQ，等待 LP_ACTIVE）
+/// - Drop 时：执行 cancel_lp_active_request 逻辑（清除 HP2LP_REQ）
+///
+/// 内部维护引用计数，支持多个模块同时持有 Guard。
+///
+/// # Example
+///
+/// ```no_run
+/// use sifli_hal::lcpu::LcpuActiveGuard;
+///
+/// # fn example() -> Result<(), sifli_hal::lcpu::LcpuError> {
+/// // 创建 Guard，LCPU 被唤醒
+/// let _guard = LcpuActiveGuard::new()?;
+///
+/// // 使用 LCPU...
+///
+/// // Guard Drop 时自动取消 LP_ACTIVE 请求
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # 对应 SDK 函数
+///
+/// - 创建：`HAL_HPAON_WakeCore()` in `bf0_hal_hpaon.c:190`
+/// - Drop：`HAL_HPAON_CANCEL_LP_ACTIVE_REQUEST()` in `bf0_hal_aon.h:298`
+pub struct LcpuActiveGuard {
+    _private: (),
+}
+
+impl LcpuActiveGuard {
+    /// 创建 LCPU 活跃状态守卫，唤醒 LCPU
+    ///
+    /// 此函数会：
+    /// 1. 原子地增加引用计数
+    /// 2. 如果是首次唤醒（0→1），置位 HP2LP_REQ 并等待 LP_ACTIVE
+    ///
+    /// # Errors
+    ///
+    /// - [`LcpuError::RefCountOverflow`][]: 引用计数超过最大值（20）
+    /// - [`LcpuError::WakeCoreTimeout`][]: 等待 LP_ACTIVE 超时
+    ///
+    /// # 对应 SDK 函数
+    ///
+    /// - `HAL_HPAON_WakeCore(CORE_ID_LCPU)` in `bf0_hal_hpaon.c:190`
+    pub fn new() -> Result<Self, LcpuError> {
+        // 1. 原子增加引用计数
+        let prev_count = critical_section::with(|_| {
+            let count = LCPU_WAKEUP_REF_CNT.load(Ordering::Relaxed);
+            if count >= MAX_REF_COUNT {
+                return Err(LcpuError::RefCountOverflow);
+            }
+            LCPU_WAKEUP_REF_CNT.store(count + 1, Ordering::Relaxed);
+            Ok(count)
+        })?;
+
+        debug!(
+            "LCPU wake reference count: {} -> {}",
+            prev_count,
+            prev_count + 1
+        );
+
+        // 2. 仅在首次唤醒时执行硬件操作（0→1）
+        if prev_count == 0 {
+            debug!("First wake, setting HP2LP_REQ and waiting for LP_ACTIVE");
+
+            let hpsys_aon = crate::pac::HPSYS_AON;
+
+            // 置位 HP2LP_REQ (bf0_hal_hpaon.c:206)
+            hpsys_aon.issr().modify(|w| w.set_hp2lp_req(true));
+
+            // 等待 LP_ACTIVE 置位 (bf0_hal_hpaon.c:212-217)
+            // 超时时间：假设 48MHz 时钟，1M 周期约 20ms
+            const TIMEOUT_CYCLES: u32 = 1_000_000;
+            let mut timeout = TIMEOUT_CYCLES;
+
+            while !hpsys_aon.issr().read().lp_active() {
+                timeout = timeout.saturating_sub(1);
+                if timeout == 0 {
+                    error!("Timeout waiting for LP_ACTIVE, rolling back ref count");
+
+                    // 超时：回滚引用计数
+                    critical_section::with(|_| {
+                        LCPU_WAKEUP_REF_CNT.store(0, Ordering::Relaxed);
+                    });
+
+                    return Err(LcpuError::WakeCoreTimeout);
+                }
+            }
+
+            debug!("LP_ACTIVE set, LCPU is now awake");
+        } else {
+            debug!("LCPU already awake, reusing existing wake state");
+        }
+
+        Ok(Self { _private: () })
+    }
+}
+
+impl Drop for LcpuActiveGuard {
+    /// 析构时取消 LP_ACTIVE 请求
+    ///
+    /// 此函数会：
+    /// 1. 原子地减少引用计数
+    /// 2. 如果是最后一个释放（1→0），清除 HP2LP_REQ
+    ///
+    /// # 对应 SDK 函数
+    ///
+    /// - `HAL_HPAON_CANCEL_LP_ACTIVE_REQUEST()` 宏 in `bf0_hal_aon.h:298`
+    fn drop(&mut self) {
+        // 原子减少引用计数，判断是否是最后一个
+        let is_last = critical_section::with(|_| {
+            let count = LCPU_WAKEUP_REF_CNT.load(Ordering::Relaxed);
+            assert!(count >= 1, "LCPU wake reference count underflow");
+            LCPU_WAKEUP_REF_CNT.store(count - 1, Ordering::Relaxed);
+            count == 1
+        });
+
+        let new_count = LCPU_WAKEUP_REF_CNT.load(Ordering::Relaxed);
+        debug!("LCPU wake reference count decreased to {}", new_count);
+
+        // 仅在最后一个 Guard 释放时清除 HP2LP_REQ（1→0）
+        if is_last {
+            debug!("Last guard dropped, clearing HP2LP_REQ");
+
+            let hpsys_aon = crate::pac::HPSYS_AON;
+
+            // 清除 HP2LP_REQ (bf0_hal_aon.h:309)
+            hpsys_aon.issr().modify(|w| w.set_hp2lp_req(false));
+
+            debug!("HP2LP_REQ cleared, LPSYS can now sleep");
+        } else {
+            debug!("Other guards still active, keeping HP2LP_REQ set");
+        }
+    }
 }
 
 //=============================================================================
@@ -313,8 +485,9 @@ pub fn power_on(config: &LcpuConfig) -> Result<(), LcpuError> {
     info!("Starting LCPU power-on sequence");
 
     // 1. 唤醒 LCPU (bf0_lcpu_init.c:165)
+    // 使用 LcpuActiveGuard 自动管理唤醒与取消
     debug!("Step 1: Waking up LCPU");
-    wake_core(CoreId::Lcpu)?;
+    let _guard = LcpuActiveGuard::new()?;
 
     // 2. 复位并停表 LCPU (bf0_lcpu_init.c:166)
     debug!("Step 2: Resetting and halting LCPU");
@@ -363,8 +536,8 @@ pub fn power_on(config: &LcpuConfig) -> Result<(), LcpuError> {
     release_lcpu()?;
 
     // 9. 收尾 (bf0_lcpu_init.c:187)
-    debug!("Step 9: Cleaning up (cancel LP_ACTIVE request)");
-    cancel_lp_active_request()?;
+    // Guard 会在函数结束时自动 Drop，执行 cancel_lp_active_request
+    debug!("Step 9: Guard will auto-cancel LP_ACTIVE request on drop");
 
     info!("LCPU power-on sequence completed successfully");
 
@@ -391,24 +564,6 @@ pub fn power_off() -> Result<(), LcpuError> {
 //=============================================================================
 // 内部辅助函数（待实现）
 //=============================================================================
-
-/// 唤醒指定核心
-///
-/// # 待实现
-///
-/// 对应 SDK: `HAL_HPAON_WakeCore()` in `bf0_hal_hpaon.c:190`
-///
-/// 需要在 `hpaon` 模块中实现。
-fn wake_core(_core_id: CoreId) -> Result<(), LcpuError> {
-    // TODO: 实现 HAL_HPAON_WakeCore
-    // 参考: SiFli-SDK/drivers/hal/bf0_hal_hpaon.c:190
-    //
-    // 步骤：
-    // 1. 置位 HPSYS_AON->ISSR.HP2LP_REQ
-    // 2. 等待 ISSR.LP_ACTIVE 置位
-    // 3. 维护引用计数（LB52x）
-    todo!("wake_core: HAL_HPAON_WakeCore 实现")
-}
 
 /// 复位并停表 LCPU
 ///
@@ -443,22 +598,6 @@ fn release_lcpu() -> Result<(), LcpuError> {
     // 步骤：
     // 清除 LPSYS_AON->PMR.CPUWAIT
     todo!("release_lcpu: HAL_RCC_ReleaseLCPU 实现")
-}
-
-/// 取消 LP_ACTIVE 请求
-///
-/// # 待实现
-///
-/// 对应 SDK: `HAL_HPAON_CANCEL_LP_ACTIVE_REQUEST()` 宏
-///
-/// 需要在 `hpaon` 模块中实现。
-fn cancel_lp_active_request() -> Result<(), LcpuError> {
-    // TODO: 实现 HAL_HPAON_CANCEL_LP_ACTIVE_REQUEST
-    // 参考: SiFli-SDK/drivers/Include/bf0_hal_aon.h:298-314
-    //
-    // 步骤：
-    // 维护引用计数，归零后清 HPSYS_AON->ISSR.HP2LP_REQ
-    todo!("cancel_lp_active_request: HAL_HPAON_CANCEL_LP_ACTIVE_REQUEST 实现")
 }
 
 /// LCPU ROM 配置
@@ -520,12 +659,8 @@ fn check_lcpu_frequency() -> Result<(), LcpuError> {
 ///
 /// # 错误
 ///
-/// - [`LcpuError::PatchInstall`]: 补丁安装失败
-///
-/// # 注意
-///
-/// 本函数临时公开，用于测试补丁安装功能。未来可能移回私有。
-pub fn install_patch_and_calibrate(config: &LcpuConfig, idr: &Idr) -> Result<(), LcpuError> {
+/// - [`LcpuError::PatchInstall`][]: 补丁安装失败
+fn install_patch_and_calibrate(config: &LcpuConfig, idr: &Idr) -> Result<(), LcpuError> {
     let revision = idr.revision();
 
     // 根据版本选择补丁数据
