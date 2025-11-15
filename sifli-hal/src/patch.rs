@@ -309,7 +309,7 @@ fn install_a3(record: &[u32], code: &[u32]) -> Result<(), Error> {
         core::ptr::copy_nonoverlapping(code.as_ptr(), code_dst, code.len());
     }
 
-    info!("A3 patch installed successfully");
+    debug!("A3 patch installed successfully");
     Ok(())
 }
 

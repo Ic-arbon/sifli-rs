@@ -70,6 +70,34 @@ use crate::{lcpu, pac};
 pub struct LpAon;
 
 impl LpAon {
+    /// 从 LCPU 代码区固定地址读取启动向量表的前两个条目。
+    ///
+    /// 返回值依次为 `(sp, pc)`。
+    ///
+    /// # Safety
+    ///
+    /// 调用方必须保证：
+    /// - LCPU 镜像已经正确装载到 `lcpu::LCPU_CODE_START_ADDR`；
+    /// - 启动向量表前两个条目是合法的栈指针和复位入口地址。
+    fn read_start_vector_from_mem() -> (u32, u32) {
+        let vector_addr = lcpu::LCPU_CODE_START_ADDR as *const u32;
+
+        unsafe {
+            // vector[0] (0x20400000): 初始栈指针 (SP)
+            // vector[1] (0x20400004): Reset_Handler 地址 (PC)
+            let sp = core::ptr::read_volatile(vector_addr);
+            let pc = core::ptr::read_volatile(vector_addr.add(1));
+            (sp, pc)
+        }
+    }
+
+    /// 将给定的 `(sp, pc)` 写入 LPSYS_AON 的 SPR/PCR 寄存器。
+    fn write_start_vector_to_regs(sp: u32, pc: u32) {
+        // LCPU 启动/唤醒时，硬件会自动从这些寄存器加载 SP 和 PC
+        pac::LPSYS_AON.spr().write(|w| w.set_sp(sp));
+        pac::LPSYS_AON.pcr().write(|w| w.set_pc(pc));
+    }
+
     /// 配置 LCPU 启动地址
     ///
     /// 从固定的 LCPU 代码区起始地址 (`lcpu::LCPU_CODE_START_ADDR` = 0x20400000)
@@ -104,20 +132,8 @@ impl LpAon {
     /// - `HAL_LPAON_ConfigStartAddr()` in `bf0_hal_lpaon.c:436-441`
     /// - 调用位置: `bf0_lcpu_init.c:184`
     pub fn configure_lcpu_start() {
-        let vector_addr = lcpu::LCPU_CODE_START_ADDR as *const u32;
-
-        unsafe {
-            // 从 LCPU 代码区读取启动向量表的前两个条目
-            // vector[0] (0x20400000): 初始栈指针 (SP)
-            // vector[1] (0x20400004): Reset_Handler 地址 (PC)
-            let sp = core::ptr::read_volatile(vector_addr);
-            let pc = core::ptr::read_volatile(vector_addr.add(1));
-
-            // 写入 LPAON 寄存器（使用 PAC API）
-            // LCPU 启动/唤醒时，硬件会自动从这些寄存器加载 SP 和 PC
-            pac::LPSYS_AON.spr().write(|w| w.set_sp(sp));
-            pac::LPSYS_AON.pcr().write(|w| w.set_pc(pc));
-        }
+        let (sp, pc) = Self::read_start_vector_from_mem();
+        Self::write_start_vector_to_regs(sp, pc);
     }
 
     /// 读取当前配置的 LCPU 启动向量
@@ -137,8 +153,43 @@ impl LpAon {
     /// println!("Current LCPU start: SP={:#010x}, PC={:#010x}", sp, pc);
     /// ```
     pub fn read_start_vector() -> (u32, u32) {
-        let sp = pac::LPSYS_AON.spr().read().sp();
-        let pc = pac::LPSYS_AON.pcr().read().pc();
-        (sp, pc)
+        let spr = pac::LPSYS_AON.spr().read();
+        let pcr = pac::LPSYS_AON.pcr().read();
+        (spr.sp(), pcr.pc())
+    }
+
+    /// 读取当前 LPSYS_AON PMR 寄存器中的 CPUWAIT 标志。
+    ///
+    /// 返回 `true` 表示 LCPU 在复位后会被停表。
+    #[allow(dead_code)]
+    pub(crate) fn cpuwait() -> bool {
+        pac::LPSYS_AON.pmr().read().cpuwait()
+    }
+
+    /// 设置 LPSYS_AON PMR 寄存器中的 CPUWAIT 标志。
+    ///
+    /// 当 `enable` 为 `true` 时，LCPU 在复位后会保持停表状态；
+    /// 当 `enable` 为 `false` 时，LCPU 复位释放后可以正常运行。
+    #[allow(dead_code)]
+    pub(crate) fn set_cpuwait(enable: bool) {
+        pac::LPSYS_AON.pmr().modify(|w| w.set_cpuwait(enable));
+    }
+
+    /// 读取当前 LPSYS_AON SLP_CTRL 寄存器中的 SLEEP_STATUS 标志。
+    ///
+    /// 返回 `true` 表示 LPSYS 正处于睡眠状态。
+    #[allow(dead_code)]
+    pub(crate) fn sleep_status() -> bool {
+        pac::LPSYS_AON.slp_ctrl().read().sleep_status()
+    }
+
+    /// 设置 LPSYS_AON SLP_CTRL 寄存器中的 WKUP_REQ 标志。
+    ///
+    /// 当 `enable` 为 `true` 时，向 LPSYS 发起一次唤醒请求。
+    #[allow(dead_code)]
+    pub(crate) fn set_wkup_req(enable: bool) {
+        pac::LPSYS_AON
+            .slp_ctrl()
+            .modify(|w| w.set_wkup_req(enable));
     }
 }

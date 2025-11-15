@@ -78,7 +78,7 @@ pub fn install(idr: &Idr, image_words: &[u32]) -> Result<(), Error> {
             install_image_unsafe(image_words);
         }
 
-        info!("LCPU image installed successfully");
+        debug!("LCPU image installed successfully");
     } else {
         debug!("Letter Series detected, skipping image install");
     }

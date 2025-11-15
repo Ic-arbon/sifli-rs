@@ -567,37 +567,64 @@ pub fn power_off() -> Result<(), LcpuError> {
 
 /// 复位并停表 LCPU
 ///
-/// # 待实现
+/// 通过 LPSYS_RCC 复位 LCPU 和 BT MAC，并使用 LPSYS_AON 的 CPUWAIT 机制
+/// 使 LCPU 停在等待状态，为后续配置做准备。
 ///
 /// 对应 SDK: `HAL_RCC_Reset_and_Halt_LCPU()` in `bf0_hal_rcc.c:1989`
 ///
-/// 需要在 `rcc` 模块中实现。
+/// # 流程
+///
+/// 1. 置位 CPUWAIT 使 LCPU 进入等待状态
+/// 2. 复位 LCPU 和 MAC（SF32LB52X 要求同时复位）
+/// 3. 若 LPSYS 处于睡眠状态，唤醒它
+/// 4. 清除复位位，但保持 CPUWAIT=1
 fn reset_and_halt_lcpu() -> Result<(), LcpuError> {
-    // TODO: 实现 HAL_RCC_Reset_and_Halt_LCPU
-    // 参考: SiFli-SDK/drivers/hal/bf0_hal_rcc.c:1989
-    //
-    // 步骤：
-    // 1. 置位 LPSYS_AON->PMR.CPUWAIT
-    // 2. 复位 LCPU 与相关模块
-    // 3. 若 LPSYS 睡眠，置位 SLP_CTRL.WKUP_REQ
-    // 4. 清除复位位，保持 CPUWAIT=1
-    todo!("reset_and_halt_lcpu: HAL_RCC_Reset_and_Halt_LCPU 实现")
+    use crate::{lpaon::LpAon, pac};
+
+    // 仅在 CPUWAIT 未置位时执行复位流程
+    if !LpAon::cpuwait() {
+        // 1. 置位 CPUWAIT，让 LCPU 停在等待状态
+        LpAon::set_cpuwait(true);
+
+        // 2. 复位 LCPU 和 MAC (SF32LB52X 要求同时复位)
+        pac::LPSYS_RCC.rstr1().write(|w| {
+            w.set_lcpu(true);
+            w.set_mac(true);
+        });
+
+        // 3. 等待复位位生效
+        while pac::LPSYS_RCC.rstr1().read().0 == 0 {}
+
+        // 4. 若 LPSYS 睡眠，唤醒它
+        if LpAon::sleep_status() {
+            LpAon::set_wkup_req(true);
+            while LpAon::sleep_status() {}
+        }
+
+        // 5. 清除复位位，保持 CPUWAIT=1
+        pac::LPSYS_RCC.rstr1().write(|w| {
+            w.set_lcpu(false);
+            w.set_mac(false);
+        });
+    }
+
+    Ok(())
 }
 
 /// 释放 LCPU 运行
 ///
-/// # 待实现
+/// 清除 LPSYS_AON 的 CPUWAIT 位，让 LCPU 从等待状态退出并开始执行。
+///
+/// 应在完成所有 LCPU 配置（ROM 配置、镜像加载、补丁安装等）后调用。
 ///
 /// 对应 SDK: `HAL_RCC_ReleaseLCPU()` in `bf0_hal_rcc.c:1962`
-///
-/// 需要在 `rcc` 模块中实现。
 fn release_lcpu() -> Result<(), LcpuError> {
-    // TODO: 实现 HAL_RCC_ReleaseLCPU
-    // 参考: SiFli-SDK/drivers/hal/bf0_hal_rcc.c:1962
-    //
-    // 步骤：
-    // 清除 LPSYS_AON->PMR.CPUWAIT
-    todo!("release_lcpu: HAL_RCC_ReleaseLCPU 实现")
+    use crate::lpaon::LpAon;
+
+    // 清除 CPUWAIT，让 LCPU 开始运行
+    LpAon::set_cpuwait(false);
+
+    Ok(())
 }
 
 /// LCPU ROM 配置
