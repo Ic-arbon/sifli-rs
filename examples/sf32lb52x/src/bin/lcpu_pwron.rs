@@ -38,8 +38,8 @@ async fn main(_spawner: Spawner) {
             record: &patch_ls::PATCH_RECORD_U32,
             code: &patch_ls::PATCH_CODE_U32,
         })
-        .disable_rf_cal()              // RF 校准尚未实现
-        .skip_frequency_check();       // 频率检查尚未实现
+        // .skip_frequency_check()
+        .disable_rf_cal();              // RF 校准尚未实现
 
     lcpu::power_on(&config).unwrap();
 

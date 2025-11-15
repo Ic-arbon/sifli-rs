@@ -635,17 +635,126 @@ fn release_lcpu() -> Result<(), LcpuError> {
 ///
 /// 使用默认配置，可由用户通过弱符号覆盖。
 fn lcpu_rom_config() -> Result<(), LcpuError> {
-    // TODO: 实现 lcpu_rom_config
-    // 参考: SiFli-SDK/drivers/cmsis/sf32lb52x/bf0_lcpu_init.c:89
-    //
-    // 典型配置：
-    // - LXT 是否使能
-    // - 看门狗状态/超时/时钟
-    // - BT RC 校准开关
-    // - A4+: HCPU→LCPU TX 队列基址
-    debug!("Using default ROM configuration");
+    use core::{mem, ptr};
 
-    todo!("lcpu_rom_config: 实现默认 ROM 配置")
+    // 仅实现 SF32LB52x 的 ROM 配置，地址/偏移来自 SDK：
+    // - SiFli-SDK/drivers/cmsis/sf32lb52x/lcpu_config_type_int.h
+    // - SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h
+
+    // LCPU ROM 配置上下文基础地址
+    const LCPU_CONFIG_START_ADDR: usize = 0x2040_FDC0;
+    const LCPU_CONFIG_ROM_SIZE: usize = 0x40;
+    const LCPU_CONFIG_ROM_A4_SIZE: usize = 0xCC;
+    const LCPU_CONFIG_MAGIC_NUM: u32 = 0x4545_7878; // LPCU_CONFIG_MAGIC_NUM
+
+    // Rev B(Letter Series) 使用的 LCPU→HCPU Mailbox 缓冲区作为配置区
+    const LCPU2HCPU_MB_CH2_BUF_REV_B_START_ADDR: usize = 0x2040_2A00;
+
+    // HCPU→LCPU Mailbox 通道 1 起始地址（作为 TX 队列基址传递给 ROM）
+    const HCPU2LCPU_MB_CH1_BUF_START_ADDR: usize = 0x2007_FE00;
+
+    // 各字段在配置区中的偏移（ROM 视图）
+    const OFFSET_WDT_TIME: usize = 12;
+    const OFFSET_WDT_STATUS: usize = 16;
+    const OFFSET_WDT_CLK: usize = 24;
+    const OFFSET_IS_XTAL_ENABLE: usize = 26;
+    const OFFSET_IS_RCCAL_IN_L: usize = 27;
+    const OFFSET_BT_ROM_CONFIG: usize = 172;
+    const OFFSET_HCPU_IPC_ADDR: usize = 200;
+
+    // 与 SDK 对齐的 BT ROM 配置结构体布局
+    #[repr(C)]
+    #[derive(Copy, Clone)]
+    struct LcpuBtRomConfig {
+        bit_valid: u32,
+        max_sleep_time: u32,
+        controller_enable_bit: u8,
+        lld_prog_delay: u8,
+        lld_prog_delay_min: u8,
+        default_sleep_mode: u8,
+        default_sleep_enabled: u8,
+        default_xtal_enabled: u8,
+        default_rc_cycle: u8,
+        default_swprofiling_cfg: u8,
+        boot_mode: u8,
+        is_fpga: u8,
+        en_inq_filter: u8,
+        support_3m: u8,
+        sco_cfg: u8,
+    }
+
+    // 读取芯片修订号
+    let idr = syscfg::read_idr();
+    let revision = idr.revision();
+
+    // 选择配置区基址与大小：
+    // - A3 及之前：固定配置区（LCPU_CONFIG_START_ADDR）
+    // - A4 及之后：使用 Mailbox CH2 缓冲区
+    let (base, size) = if revision.is_letter_series() {
+        (
+            LCPU2HCPU_MB_CH2_BUF_REV_B_START_ADDR,
+            LCPU_CONFIG_ROM_A4_SIZE,
+        )
+    } else {
+        (LCPU_CONFIG_START_ADDR, LCPU_CONFIG_ROM_SIZE)
+    };
+
+    debug!(
+        "Initializing LCPU ROM config: base=0x{:08X}, size={} (REVID=0x{:02X})",
+        base, size, revision
+    );
+
+    unsafe {
+        // 清空配置区并写入 magic，等价于 HAL_LCPU_CONIFG_init()
+        ptr::write_bytes(base as *mut u8, 0, size);
+        ptr::write_volatile(base as *mut u32, LCPU_CONFIG_MAGIC_NUM);
+
+        // 默认参数，与 lcpu_rom_config_default() 对齐
+        // USE_LXT: 默认开启外部低速晶振
+        let is_enable_lxt: u8 = 1;
+        let is_lcpu_rccal: u8 = 1 - is_enable_lxt;
+        let wdt_status: u32 = 0xFF;
+        let wdt_time: u32 = 10;
+        let wdt_clk: u16 = 32_768;
+
+        // HAL_LCPU_CONFIG_XTAL_ENABLED
+        ptr::write_volatile(
+            (base + OFFSET_IS_XTAL_ENABLE) as *mut u8,
+            is_enable_lxt,
+        );
+
+        // HAL_LCPU_CONFIG_WDT_STATUS
+        ptr::write_volatile((base + OFFSET_WDT_STATUS) as *mut u32, wdt_status);
+
+        // HAL_LCPU_CONFIG_WDT_TIME
+        ptr::write_volatile((base + OFFSET_WDT_TIME) as *mut u32, wdt_time);
+
+        // HAL_LCPU_CONFIG_WDT_CLK_FEQ
+        ptr::write_volatile((base + OFFSET_WDT_CLK) as *mut u16, wdt_clk);
+
+        // HAL_LCPU_CONFIG_BT_RC_CAL_IN_L
+        ptr::write_volatile((base + OFFSET_IS_RCCAL_IN_L) as *mut u8, is_lcpu_rccal);
+
+        // A4 及之后需要额外的 BT ROM 配置
+        if revision.is_letter_series() {
+            // HAL_LCPU_CONFIG_HCPU_TX_QUEUE
+            let tx_queue: u32 = HCPU2LCPU_MB_CH1_BUF_START_ADDR as u32;
+            ptr::write_volatile((base + OFFSET_HCPU_IPC_ADDR) as *mut u32, tx_queue);
+
+            // HAL_LCPU_CONFIG_BT_CONFIG
+            let mut config: LcpuBtRomConfig = mem::zeroed();
+            // 仅设置 bit[10] 和 bit[6] 有效，与 SDK 一致
+            config.bit_valid = (1 << 10) | (1 << 6);
+            config.is_fpga = 0;
+            config.default_xtal_enabled = is_enable_lxt;
+
+            let src = &config as *const LcpuBtRomConfig as *const u8;
+            let dst = (base + OFFSET_BT_ROM_CONFIG) as *mut u8;
+            ptr::copy_nonoverlapping(src, dst, mem::size_of::<LcpuBtRomConfig>());
+        }
+    }
+
+    Ok(())
 }
 
 /// 检查 LCPU 频率是否满足装载要求
@@ -656,23 +765,101 @@ fn lcpu_rom_config() -> Result<(), LcpuError> {
 ///
 /// 对应 SDK: `bf0_lcpu_init.c:170-176`
 fn check_lcpu_frequency() -> Result<(), LcpuError> {
-    // TODO: 实现频率检查
-    // 参考: SiFli-SDK/drivers/cmsis/sf32lb52x/bf0_lcpu_init.c:170
+    // 参考: SiFli-SDK/drivers/cmsis/sf32lb52x/bf0_lcpu_init.c:170-176
     //
-    // 步骤：
-    // 1. 调用 HAL_RCC_GetHCLKFreq(CORE_ID_LCPU)
-    // 2. 若 > 24MHz，临时设置分频
+    // C 版逻辑:
+    //   if (HAL_RCC_GetHCLKFreq(CORE_ID_LCPU) > 24000000) {
+    //       /* restore to default value */
+    //       HAL_RCC_LCPU_SetDiv(2, 1, 5);
+    //       HAL_ASSERT(HAL_RCC_GetHCLKFreq(CORE_ID_LCPU) <= 24000000);
+    //   }
+    //
+    // 其中 HAL_RCC_LCPU_SetDiv(2, 1, 5) 对应:
+    //   - HDIV1 = 2  (hclk_lpsys = clk_lpsys / 2 = 24MHz，当 clk_lpsys=48MHz 时)
+    //   - PDIV1 = 1  (pclk1 = hclk / 2)
+    //   - PDIV2 = 5  (pclk2 = hclk / 32)
+    //
+    // 这里直接通过 LPSYS_RCC 的寄存器计算/限制 LPSYS HCLK。
     const MAX_LOAD_FREQ_HZ: u32 = 24_000_000;
 
-    // let actual_hz = rcc::get_lcpu_hclk_freq();
-    // if actual_hz > MAX_LOAD_FREQ_HZ {
-    //     return Err(LcpuError::FrequencyTooHigh {
-    //         actual_hz,
-    //         max_hz: MAX_LOAD_FREQ_HZ,
-    //     });
-    // }
+    // 1. 计算当前 LPSYS HCLK 频率
+    //
+    //   clk_lpsys 来源:
+    //     - sel_sys_lp = 0: 由 sel_sys 选择 clk_hrc48 / clk_hxt48，均为 48MHz
+    //     - sel_sys_lp = 1: clk_wdt（低速时钟，远低于 24MHz）
+    //
+    //   hclk_lpsys = clk_lpsys / HDIV1 (HDIV1=0 时不分频)
+    use crate::pac;
 
-    todo!("check_lcpu_frequency: 实现 LCPU 频率检查")
+    let csr = pac::LPSYS_RCC.csr().read();
+
+    // 这里只区分「高速 48MHz 域」和「低速 WDT 域」；
+    // WDT 域频率远低于 24MHz，因此不会触发限频调整。
+    let clk_lpsys_hz: u32 = if csr.sel_sys_lp() {
+        // 使用 WDT 作为 LPSYS 时钟源，频率在 kHz 级别，安全。
+        32_768
+    } else {
+        // 使用 48MHz 时钟作为 LPSYS 时钟源（HRC48 或 HXT48）
+        48_000_000
+    };
+
+    let cfgr = pac::LPSYS_RCC.cfgr().read();
+    let hdiv = cfgr.hdiv1();
+
+    let hclk_hz = if hdiv == 0 {
+        clk_lpsys_hz
+    } else {
+        clk_lpsys_hz / (hdiv as u32)
+    };
+
+    // 2. 若当前 HCLK 已在限制之内，直接返回
+    if hclk_hz <= MAX_LOAD_FREQ_HZ {
+        debug!(
+            "LPSYS HCLK within limit for LCPU loading: {} Hz (HDIV1={})",
+            hclk_hz, hdiv
+        );
+        return Ok(());
+    }
+
+    warn!(
+        "LPSYS HCLK too high for LCPU loading: {} Hz (max {} Hz), adjusting dividers",
+        hclk_hz, MAX_LOAD_FREQ_HZ
+    );
+
+    // 3. 将分频恢复到 SDK 默认安全值:
+    //    HAL_RCC_LCPU_SetDiv(2, 1, 5)
+    pac::LPSYS_RCC.cfgr().modify(|w| {
+        w.set_hdiv1(2);
+        w.set_pdiv1(1);
+        w.set_pdiv2(5);
+    });
+
+    let cfgr_after = pac::LPSYS_RCC.cfgr().read();
+    let new_hdiv = cfgr_after.hdiv1();
+
+    let new_hclk_hz = if new_hdiv == 0 {
+        clk_lpsys_hz
+    } else {
+        clk_lpsys_hz / (new_hdiv as u32)
+    };
+
+    if new_hclk_hz > MAX_LOAD_FREQ_HZ {
+        error!(
+            "Failed to reduce LPSYS HCLK below {} Hz: now {} Hz (HDIV1={})",
+            MAX_LOAD_FREQ_HZ, new_hclk_hz, new_hdiv
+        );
+        return Err(LcpuError::FrequencyTooHigh {
+            actual_hz: new_hclk_hz,
+            max_hz: MAX_LOAD_FREQ_HZ,
+        });
+    }
+
+    debug!(
+        "Adjusted LPSYS HCLK for LCPU loading: {} Hz -> {} Hz (HDIV1={})",
+        hclk_hz, new_hclk_hz, new_hdiv
+    );
+
+    Ok(())
 }
 
 /// 安装补丁与 RF 校准
