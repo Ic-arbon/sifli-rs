@@ -13,7 +13,7 @@
 //! let idr = syscfg::read_idr();
 //!
 //! // 自动识别版本并安装补丁
-//! patch::install(&idr, &PATCH_RECORD, &PATCH_CODE)?;
+//! patch::install(&idr, &PATCH_LIST, &PATCH_BIN)?;
 //!
 //! ```
 //!
@@ -27,9 +27,9 @@
 //! - **数据来源**: `lcpu_patch.c` (通过 `carray2rs` 工具转换)
 //!
 //! 安装步骤:
-//! 1. 复制补丁记录数组到 `LCPU_PATCH_RECORD_ADDR`
+//! 1. 复制补丁记录数组到 `LCPU_PATCH_RECORD_ADDR_A3`（对应 SDK 的 `LCPU_PATCH_RECORD_ADDR`）
 //! 2. 清零补丁代码区
-//! 3. 复制补丁代码数组到 `LCPU_PATCH_START_ADDR_S`
+//! 3. 复制补丁代码数组到 `LCPU_PATCH_START_ADDR_S_A3`
 //!
 //! ### Letter Series (A4/B4)
 //!
@@ -101,7 +101,7 @@ pub const LCPU_PATCH_START_ADDR_S_A3: usize = 0x2040_6000;
 ///
 /// 位于补丁区末尾 256 bytes (0x20406000 + 0x2000 - 0x100 = 0x20407F00)
 ///
-/// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h:331`
+/// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h:331` (`LCPU_PATCH_RECORD_ADDR`)
 pub const LCPU_PATCH_RECORD_ADDR_A3: usize = 0x2040_7F00;
 
 /// 补丁总大小 (A3)
@@ -215,8 +215,8 @@ impl defmt::Format for Error {
 /// # Arguments
 ///
 /// - `idr`: 芯片识别信息 (通过 [`crate::syscfg::read_idr()`] 获取)
-/// - `record`: 补丁记录数组 (u32 words)
-/// - `code`: 补丁代码数组 (u32 words)
+/// - `list`: 补丁记录/条目列表数组 (u32 words)，对应 `g_lcpu_patch_list`
+/// - `bin`:  补丁代码数组 (u32 words)，对应 `g_lcpu_patch_bin`
 ///
 /// # Errors
 ///
@@ -231,19 +231,19 @@ impl defmt::Format for Error {
 /// use sifli_hal::{patch, syscfg};
 ///
 /// let idr = syscfg::read_idr();
-/// patch::install(&idr, &PATCH_RECORD, &PATCH_CODE)?;
+/// patch::install(&idr, &PATCH_LIST, &PATCH_BIN)?;
 /// ```
 ///
 /// # 对应 SDK 函数
 ///
 /// - A3: `lcpu_patch_install()` in `lcpu_patch.c:537`
 /// - Letter: `lcpu_patch_install_rev_b()` in `lcpu_patch_rev_b.c:58`
-pub fn install(idr: &Idr, record: &[u32], code: &[u32]) -> Result<(), Error> {
+pub fn install(idr: &Idr, list: &[u32], bin: &[u32]) -> Result<(), Error> {
     // 参数检查
-    if record.is_empty() {
+    if list.is_empty() {
         return Err(Error::EmptyRecord);
     }
-    if code.is_empty() {
+    if bin.is_empty() {
         return Err(Error::EmptyCode);
     }
 
@@ -254,9 +254,9 @@ pub fn install(idr: &Idr, record: &[u32], code: &[u32]) -> Result<(), Error> {
 
     // 根据版本选择安装方式
     if revision.is_letter_series() {
-        install_letter(record, code)
+        install_letter(list, bin)
     } else {
-        install_a3(record, code)
+        install_a3(list, bin)
     }
 }
 
@@ -264,14 +264,14 @@ pub fn install(idr: &Idr, record: &[u32], code: &[u32]) -> Result<(), Error> {
 ///
 /// # 安装步骤
 ///
-/// 1. 复制补丁记录到 [`LCPU_PATCH_RECORD_ADDR_A3`]
+/// 1. 复制补丁记录数组到 [`LCPU_PATCH_RECORD_ADDR_A3`]
 /// 2. 清零补丁代码区 (8KB)
 /// 3. 复制补丁代码到 [`LCPU_PATCH_START_ADDR_S_A3`]
 ///
 /// # Arguments
 ///
-/// - `record`: 补丁记录数组 (u32 words)
-/// - `code`: 补丁代码数组 (u32 words)
+/// - `list`: 补丁记录/条目列表数组 (u32 words)，对应 `g_lcpu_patch_list`
+/// - `bin`:  补丁代码数组 (u32 words)，对应 `g_lcpu_patch_bin`
 ///
 /// # Errors
 ///
@@ -280,8 +280,8 @@ pub fn install(idr: &Idr, record: &[u32], code: &[u32]) -> Result<(), Error> {
 /// # 对应 SDK 函数
 ///
 /// - SDK: `lcpu_patch_install()` in `lcpu_patch.c:537-549`
-fn install_a3(record: &[u32], code: &[u32]) -> Result<(), Error> {
-    let code_size = core::mem::size_of_val(code);
+fn install_a3(list: &[u32], bin: &[u32]) -> Result<(), Error> {
+    let code_size = core::mem::size_of_val(bin);
     if code_size > LCPU_PATCH_TOTAL_SIZE_A3 {
         return Err(Error::CodeTooLarge {
             size_bytes: code_size,
@@ -291,14 +291,14 @@ fn install_a3(record: &[u32], code: &[u32]) -> Result<(), Error> {
 
     debug!(
         "Installing A3 patch: record={} words, code={} bytes",
-        record.len(),
+        list.len(),
         code_size
     );
 
     unsafe {
-        // 1. 复制补丁记录
+        // 1. 复制补丁记录 (entry list)
         let record_dst = LCPU_PATCH_RECORD_ADDR_A3 as *mut u32;
-        core::ptr::copy_nonoverlapping(record.as_ptr(), record_dst, record.len());
+        core::ptr::copy_nonoverlapping(list.as_ptr(), record_dst, list.len());
 
         // 2. 清零补丁代码区
         let code_dst = LCPU_PATCH_START_ADDR_S_A3 as *mut u8;
@@ -306,7 +306,7 @@ fn install_a3(record: &[u32], code: &[u32]) -> Result<(), Error> {
 
         // 3. 复制补丁代码
         let code_dst = LCPU_PATCH_START_ADDR_S_A3 as *mut u32;
-        core::ptr::copy_nonoverlapping(code.as_ptr(), code_dst, code.len());
+        core::ptr::copy_nonoverlapping(bin.as_ptr(), code_dst, bin.len());
     }
 
     debug!("A3 patch installed successfully");
@@ -326,8 +326,8 @@ fn install_a3(record: &[u32], code: &[u32]) -> Result<(), Error> {
 ///
 /// # Arguments
 ///
-/// - `record`: 补丁记录数组 (u32 words,未使用但保持接口一致性)
-/// - `code`: 补丁代码数组 (u32 words)
+/// - `list`: 补丁记录/条目列表数组 (u32 words, 未使用但保持接口一致性)
+/// - `bin`:  补丁代码数组 (u32 words)
 ///
 /// # Errors
 ///
@@ -336,12 +336,12 @@ fn install_a3(record: &[u32], code: &[u32]) -> Result<(), Error> {
 /// # 对应 SDK 函数
 ///
 /// - SDK: `lcpu_patch_install_rev_b()` in `lcpu_patch_rev_b.c:58-73`
-fn install_letter(_record: &[u32], code: &[u32]) -> Result<(), Error> {
-    let code_size = core::mem::size_of_val(code);
+fn install_letter(_list: &[u32], bin: &[u32]) -> Result<(), Error> {
+    let code_size = core::mem::size_of_val(bin);
     if code_size > LCPU_PATCH_CODE_SIZE_LETTER {
         return Err(Error::CodeTooLarge {
-            size_bytes: code_size,
-            max_bytes: LCPU_PATCH_CODE_SIZE_LETTER,
+        size_bytes: code_size,
+        max_bytes: LCPU_PATCH_CODE_SIZE_LETTER,
         });
     }
 
@@ -367,7 +367,7 @@ fn install_letter(_record: &[u32], code: &[u32]) -> Result<(), Error> {
 
         // 3. 复制补丁代码
         let code_dst = LCPU_PATCH_CODE_START_ADDR_S_LETTER as *mut u32;
-        core::ptr::copy_nonoverlapping(code.as_ptr(), code_dst, code.len());
+        core::ptr::copy_nonoverlapping(bin.as_ptr(), code_dst, bin.len());
     }
 
     info!("Letter Series patch installed successfully");

@@ -17,26 +17,20 @@
 //! ```no_run
 //! use sifli_hal::lcpu::{self, LcpuConfig, PatchData};
 //!
-//! # fn example() -> Result<(), sifli_hal::lcpu::LcpuError> {
-//! // 准备配置
-//! let config = LcpuConfig {
-//!     firmware: Some(&LCPU_FIRMWARE),  // A3 固件镜像
-//!     patch_a3: Some(PatchData {
-//!         record: &PATCH_RECORD_A3,
-//!         code: &PATCH_CODE_A3,
-//!     }),
-//!     patch_letter: Some(PatchData {
-//!         record: &PATCH_RECORD_LETTER,
-//!         code: &PATCH_CODE_LETTER,
-//!     }),
-//!     skip_frequency_check: false,
-//!     disable_rf_cal: false,
-//! };
+//! let config = LcpuConfig::new()
+//!     .with_firmware(&lcpu_image_52x::G_LCPU_BIN_U32)
+//!     .with_patch_a3(PatchData {
+//!         list: &patch_a3::G_LCPU_PATCH_LIST_U32,
+//!         bin:  &patch_a3::G_LCPU_PATCH_BIN_U32,
+//!     })
+//!     .with_patch_letter(PatchData {
+//!         list: &patch_ls::G_LCPU_PATCH_LIST_U32,
+//!         bin:  &patch_ls::G_LCPU_PATCH_BIN_U32,
+//!     })
+//!     // .skip_frequency_check()
+//!     .disable_rf_cal();              // RF 校准尚未实现
 //!
-//! // 启动 LCPU
-//! lcpu::power_on(&config)?;
-//! # Ok(())
-//! # }
+//! lcpu::power_on(&config).unwrap();
 //! ```
 //!
 //! ## 参考资料
@@ -144,13 +138,15 @@ impl Default for LcpuConfig {
 
 /// 补丁数据
 ///
-/// 包含补丁记录和补丁代码的 u32 数组。
+/// 对应 SDK 中的 `g_lcpu_patch_list` / `g_lcpu_patch_bin`:
+/// - `list`: 补丁记录/条目列表 (entry list)
+/// - `bin`:  补丁代码二进制 (code binary)
 #[derive(Debug, Clone, Copy)]
 pub struct PatchData {
-    /// 补丁记录数组
-    pub record: &'static [u32],
+    /// 补丁记录/条目列表数组
+    pub list: &'static [u32],
     /// 补丁代码数组
-    pub code: &'static [u32],
+    pub bin: &'static [u32],
 }
 
 //=============================================================================
@@ -469,8 +465,8 @@ impl Drop for LcpuActiveGuard {
 /// let config = LcpuConfig::new()
 ///     .with_firmware(&LCPU_FIRMWARE)
 ///     .with_patch_a3(PatchData {
-///         record: &PATCH_RECORD_A3,
-///         code: &PATCH_CODE_A3,
+///         list: &PATCH_LIST_A3,
+///         bin:  &PATCH_BIN_A3,
 ///     });
 ///
 /// lcpu::power_on(&config)?;
@@ -876,13 +872,13 @@ fn install_patch_and_calibrate(config: &LcpuConfig, idr: &Idr) -> Result<(), Lcp
     // 安装补丁（如果提供了数据）
     if let Some(data) = patch_data {
         debug!(
-            "Installing patches (record: {} words, code: {} words)",
-            data.record.len(),
-            data.code.len()
+            "Installing patches (list: {} words, bin: {} words)",
+            data.list.len(),
+            data.bin.len()
         );
 
         // 使用 patch 模块安装补丁
-        patch::install(idr, data.record, data.code)?;
+        patch::install(idr, data.list, data.bin)?;
     } else {
         warn!("No patch data provided, skipping patch installation");
     }

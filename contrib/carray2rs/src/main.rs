@@ -143,7 +143,7 @@ fn extract_brace_block(s: &str) -> Option<(usize, &str)> {
     None
 }
 
-fn parse_decl_and_values(decl: &str, body: &str, alias_patch: bool) -> Option<CArray> {
+fn parse_decl_and_values(decl: &str, body: &str, _alias_patch: bool) -> Option<CArray> {
     // Expect: [qualifiers] <type tokens> <name> [ ... ]
     let mut name = String::new();
     let mut ty = BaseTy::U32; // default
@@ -174,15 +174,14 @@ fn parse_decl_and_values(decl: &str, body: &str, alias_patch: bool) -> Option<CA
     let values = parse_values(body)?;
 
     // Rust name
-    let rust_name = if alias_patch {
-        match name.as_str() {
-            "g_lcpu_patch_list" => "PATCH_RECORD_U32".to_string(),
-            "g_lcpu_patch_bin" => "PATCH_CODE_U32".to_string(),
-            _ => to_screaming_snake(&name, Some(ty)),
-        }
-    } else {
-        to_screaming_snake(&name, Some(ty))
-    };
+    //
+    // 对于 LCPU patch 数组, 我们不再做特别重命名, 而是统一保持
+    // 「基于原 C 变量名的 SCREAMING_SNAKE + 类型后缀」的规则:
+    //   g_lcpu_patch_list -> G_LCPU_PATCH_LIST_U32
+    //   g_lcpu_patch_bin  -> G_LCPU_PATCH_BIN_U32
+    //
+    // 这样可以让 HAL 侧参数命名与 SDK 中的数组名保持一致语义。
+    let rust_name = to_screaming_snake(&name, Some(ty));
 
     Some(CArray { c_name: name, rust_name, ty, values })
 }
@@ -242,4 +241,3 @@ fn parse_values(body: &str) -> Option<Vec<u64>> {
     }
     Some(vals)
 }
-

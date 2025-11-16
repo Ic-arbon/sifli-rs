@@ -31,12 +31,12 @@ async fn main(_spawner: Spawner) {
     let config = LcpuConfig::new()
         .with_firmware(&lcpu_image_52x::G_LCPU_BIN_U32)
         .with_patch_a3(PatchData {
-            record: &patch_a3::PATCH_RECORD_U32,
-            code: &patch_a3::PATCH_CODE_U32,
+            list: &patch_a3::G_LCPU_PATCH_LIST_U32,
+            bin:  &patch_a3::G_LCPU_PATCH_BIN_U32,
         })
         .with_patch_letter(PatchData {
-            record: &patch_ls::PATCH_RECORD_U32,
-            code: &patch_ls::PATCH_CODE_U32,
+            list: &patch_ls::G_LCPU_PATCH_LIST_U32,
+            bin:  &patch_ls::G_LCPU_PATCH_BIN_U32,
         })
         // .skip_frequency_check()
         .disable_rf_cal();              // RF 校准尚未实现
