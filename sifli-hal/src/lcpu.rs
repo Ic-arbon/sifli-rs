@@ -779,38 +779,19 @@ fn check_lcpu_frequency() -> Result<(), LcpuError> {
     //   - PDIV1 = 1  (pclk1 = hclk / 2)
     //   - PDIV2 = 5  (pclk2 = hclk / 32)
     //
-    // 这里直接通过 LPSYS_RCC 的寄存器计算/限制 LPSYS HCLK。
+    // 这里通过 lpsys_rcc 模块计算/限制 LPSYS HCLK，避免直接操作寄存器。
     const MAX_LOAD_FREQ_HZ: u32 = 24_000_000;
 
     // 1. 计算当前 LPSYS HCLK 频率
-    //
-    //   clk_lpsys 来源:
-    //     - sel_sys_lp = 0: 由 sel_sys 选择 clk_hrc48 / clk_hxt48，均为 48MHz
-    //     - sel_sys_lp = 1: clk_wdt（低速时钟，远低于 24MHz）
-    //
-    //   hclk_lpsys = clk_lpsys / HDIV1 (HDIV1=0 时不分频)
-    use crate::pac;
-
-    let csr = pac::LPSYS_RCC.csr().read();
-
-    // 这里只区分「高速 48MHz 域」和「低速 WDT 域」；
-    // WDT 域频率远低于 24MHz，因此不会触发限频调整。
-    let clk_lpsys_hz: u32 = if csr.sel_sys_lp() {
-        // 使用 WDT 作为 LPSYS 时钟源，频率在 kHz 级别，安全。
-        32_768
-    } else {
-        // 使用 48MHz 时钟作为 LPSYS 时钟源（HRC48 或 HXT48）
-        48_000_000
+    let hclk_hz = match crate::lpsys_rcc::get_hclk_lpsys_freq() {
+        Some(freq) => freq.0,
+        None => {
+            // 如果无法获取频率（例如 48MHz 源尚未就绪），保守起见不调整时钟。
+            warn!("LPSYS HCLK frequency unknown, skipping load-time check");
+            return Ok(());
+        }
     };
-
-    let cfgr = pac::LPSYS_RCC.cfgr().read();
-    let hdiv = cfgr.hdiv1();
-
-    let hclk_hz = if hdiv == 0 {
-        clk_lpsys_hz
-    } else {
-        clk_lpsys_hz / (hdiv as u32)
-    };
+    let hdiv = crate::lpsys_rcc::get_hclk_lpsys_div();
 
     // 2. 若当前 HCLK 已在限制之内，直接返回
     if hclk_hz <= MAX_LOAD_FREQ_HZ {
@@ -828,20 +809,26 @@ fn check_lcpu_frequency() -> Result<(), LcpuError> {
 
     // 3. 将分频恢复到 SDK 默认安全值:
     //    HAL_RCC_LCPU_SetDiv(2, 1, 5)
-    pac::LPSYS_RCC.cfgr().modify(|w| {
-        w.set_hdiv1(2);
-        w.set_pdiv1(1);
-        w.set_pdiv2(5);
-    });
+    let mut cfg = crate::lpsys_rcc::LpsysConfig::new_keep();
+    cfg.hclk_div = crate::rcc::ConfigOption::new(2);
+    cfg.pclk1_div = crate::rcc::ConfigOption::new(1);
+    cfg.pclk2_div = crate::rcc::ConfigOption::new(5);
 
-    let cfgr_after = pac::LPSYS_RCC.cfgr().read();
-    let new_hdiv = cfgr_after.hdiv1();
+    unsafe {
+        cfg.apply();
+    }
 
-    let new_hclk_hz = if new_hdiv == 0 {
-        clk_lpsys_hz
-    } else {
-        clk_lpsys_hz / (new_hdiv as u32)
+    let new_hclk_hz = match crate::lpsys_rcc::get_hclk_lpsys_freq() {
+        Some(freq) => freq.0,
+        None => {
+            error!("LPSYS HCLK frequency became unknown after applying safe dividers");
+            return Err(LcpuError::FrequencyTooHigh {
+                actual_hz: 0,
+                max_hz: MAX_LOAD_FREQ_HZ,
+            });
+        }
     };
+    let new_hdiv = crate::lpsys_rcc::get_hclk_lpsys_div();
 
     if new_hclk_hz > MAX_LOAD_FREQ_HZ {
         error!(
