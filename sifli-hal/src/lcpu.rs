@@ -155,6 +155,7 @@ pub struct PatchData {
 
 /// LCPU 启动错误
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum LcpuError {
     /// 镜像安装错误
     ImageInstall(lcpu_img::Error),
@@ -206,46 +207,6 @@ impl From<lcpu_img::Error> for LcpuError {
 impl From<patch::Error> for LcpuError {
     fn from(err: patch::Error) -> Self {
         Self::PatchInstall(err)
-    }
-}
-
-#[cfg(feature = "defmt")]
-impl defmt::Format for LcpuError {
-    fn format(&self, fmt: defmt::Formatter) {
-        match self {
-            Self::ImageInstall(err) => {
-                defmt::write!(fmt, "ImageInstall({:?})", err);
-            }
-            Self::PatchInstall(err) => {
-                defmt::write!(fmt, "PatchInstall({:?})", err);
-            }
-            Self::FirmwareMissing => {
-                defmt::write!(fmt, "FirmwareMissing");
-            }
-            Self::FrequencyTooHigh { actual_hz, max_hz } => {
-                defmt::write!(
-                    fmt,
-                    "FrequencyTooHigh {{ actual_hz: {=u32}, max_hz: {=u32} }}",
-                    actual_hz,
-                    max_hz
-                );
-            }
-            Self::HpaonError => {
-                defmt::write!(fmt, "HpaonError");
-            }
-            Self::RccError => {
-                defmt::write!(fmt, "RccError");
-            }
-            Self::RomConfigError => {
-                defmt::write!(fmt, "RomConfigError");
-            }
-            Self::RefCountOverflow => {
-                defmt::write!(fmt, "RefCountOverflow");
-            }
-            Self::WakeCoreTimeout => {
-                defmt::write!(fmt, "WakeCoreTimeout");
-            }
-        }
     }
 }
 
@@ -350,28 +311,20 @@ impl LcpuActiveGuard {
         if prev_count == 0 {
             debug!("First wake, setting HP2LP_REQ and waiting for LP_ACTIVE");
 
-            let hpsys_aon = crate::pac::HPSYS_AON;
+            // 超时时间：使用基于微秒的等待上限，参考 SDK 中
+            // `HAL_HPAON_WakeCore` 的 230us + 两次 LP_ACTIVE 轮询。
+            // 这里取更保守的 20ms 作为上限，避免硬件异常时无限阻塞。
+            const TIMEOUT_US: u32 = 20_000;
 
-            // 置位 HP2LP_REQ (bf0_hal_hpaon.c:206)
-            hpsys_aon.issr().modify(|w| w.set_hp2lp_req(true));
+            if !crate::hpaon::Hpaon::wake_lcpu_with_timeout(TIMEOUT_US) {
+                error!("Timeout waiting for LP_ACTIVE, rolling back ref count");
 
-            // 等待 LP_ACTIVE 置位 (bf0_hal_hpaon.c:212-217)
-            // 超时时间：假设 48MHz 时钟，1M 周期约 20ms
-            const TIMEOUT_CYCLES: u32 = 1_000_000;
-            let mut timeout = TIMEOUT_CYCLES;
+                // 超时：回滚引用计数
+                critical_section::with(|_| {
+                    LCPU_WAKEUP_REF_CNT.store(0, Ordering::Relaxed);
+                });
 
-            while !hpsys_aon.issr().read().lp_active() {
-                timeout = timeout.saturating_sub(1);
-                if timeout == 0 {
-                    error!("Timeout waiting for LP_ACTIVE, rolling back ref count");
-
-                    // 超时：回滚引用计数
-                    critical_section::with(|_| {
-                        LCPU_WAKEUP_REF_CNT.store(0, Ordering::Relaxed);
-                    });
-
-                    return Err(LcpuError::WakeCoreTimeout);
-                }
+                return Err(LcpuError::WakeCoreTimeout);
             }
 
             debug!("LP_ACTIVE set, LCPU is now awake");
@@ -409,10 +362,8 @@ impl Drop for LcpuActiveGuard {
         if is_last {
             debug!("Last guard dropped, clearing HP2LP_REQ");
 
-            let hpsys_aon = crate::pac::HPSYS_AON;
-
             // 清除 HP2LP_REQ (bf0_hal_aon.h:309)
-            hpsys_aon.issr().modify(|w| w.set_hp2lp_req(false));
+            crate::hpaon::Hpaon::cancel_lp_active_request();
 
             debug!("HP2LP_REQ cleared, LPSYS can now sleep");
         } else {

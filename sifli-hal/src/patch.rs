@@ -27,9 +27,9 @@
 //! - **数据来源**: `lcpu_patch.c` (通过 `carray2rs` 工具转换)
 //!
 //! 安装步骤:
-//! 1. 复制补丁记录数组到 `LCPU_PATCH_RECORD_ADDR_A3`（对应 SDK 的 `LCPU_PATCH_RECORD_ADDR`）
-//! 2. 清零补丁代码区
-//! 3. 复制补丁代码数组到 `LCPU_PATCH_START_ADDR_S_A3`
+//! 1. 复制补丁记录数组到 A3 补丁记录区 (`0x20407F00`, 对应 SDK `LCPU_PATCH_RECORD_ADDR`)
+//! 2. 清零补丁代码区 (`0x20406000` 起，大小 8KB)
+//! 3. 复制补丁代码数组到 A3 补丁代码区 (`0x20406000`)
 //!
 //! ### Letter Series (A4/B4)
 //!
@@ -39,9 +39,9 @@
 //! - **数据来源**: `lcpu_patch_rev_b.c` (通过 `carray2rs` 工具转换)
 //!
 //! 安装步骤:
-//! 1. 写入 Header (12 bytes) 到补丁缓冲区起始
-//! 2. 清零补丁代码区
-//! 3. 复制补丁代码数组到 `LCPU_PATCH_CODE_START_ADDR_S`
+//! 1. 写入 Header (12 bytes) 到补丁缓冲区起始 (`0x20405000`)
+//! 2. 清零补丁代码区 (`0x2040500C` 起，大小约 12KB - 12 bytes)
+//! 3. 复制补丁代码数组到 Letter Series 补丁代码区 (`0x2040500C`)
 //!
 //! ## Header 格式 (Letter Series)
 //!
@@ -87,51 +87,71 @@
 use crate::syscfg::Idr;
 
 //=============================================================================
-// 内存地址常量
+// 内存布局类型
 //=============================================================================
 
-// ===== A3 及更早版本 =====
+/// A3 及更早版本的 LCPU 补丁内存布局（HCPU 视角）
+///
+/// 地址和大小与 SDK `mem_map.h` 保持一致，仅在本模块内部使用。
+#[derive(Debug, Clone, Copy)]
+struct A3PatchLayout;
 
-/// 补丁代码起始地址 (A3) - HCPU 视角
-///
-/// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h:328`
-pub const LCPU_PATCH_START_ADDR_S_A3: usize = 0x2040_6000;
+impl A3PatchLayout {
+    /// 补丁代码起始地址
+    ///
+    /// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h:328`
+    const CODE_START: usize = 0x2040_6000;
 
-/// 补丁记录区地址 (A3) - HCPU 视角
-///
-/// 位于补丁区末尾 256 bytes (0x20406000 + 0x2000 - 0x100 = 0x20407F00)
-///
-/// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h:331` (`LCPU_PATCH_RECORD_ADDR`)
-pub const LCPU_PATCH_RECORD_ADDR_A3: usize = 0x2040_7F00;
+    /// 补丁记录区地址
+    ///
+    /// 位于补丁区末尾 256 bytes (0x20406000 + 0x2000 - 0x100 = 0x20407F00)
+    ///
+    /// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h:331` (`LCPU_PATCH_RECORD_ADDR`)
+    const RECORD_ADDR: usize = 0x2040_7F00;
 
-/// 补丁总大小 (A3)
-///
-/// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h:300`
-pub const LCPU_PATCH_TOTAL_SIZE_A3: usize = 8 * 1024;
+    /// 补丁总大小
+    ///
+    /// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h:300`
+    const TOTAL_SIZE: usize = 8 * 1024;
+}
 
-// ===== Letter Series (A4+/Rev B) =====
+/// Letter Series (A4+/Rev B) 的 LCPU 补丁内存布局（HCPU 视角）
+///
+/// 地址和大小与 SDK `mem_map.h` 保持一致，仅在本模块内部使用。
+#[derive(Debug, Clone, Copy)]
+struct LetterPatchLayout;
 
-/// 补丁缓冲区起始地址 (Letter Series) - HCPU 视角
-///
-/// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h:334`
-pub const LCPU_PATCH_BUF_START_ADDR_LETTER: usize = 0x2040_5000;
+impl LetterPatchLayout {
+    /// 补丁缓冲区起始地址
+    ///
+    /// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h:334`
+    const BUF_START: usize = 0x2040_5000;
 
-/// 补丁代码起始地址 (Letter Series) - HCPU 视角
-///
-/// 位于 Header 之后 (0x20405000 + 12 = 0x2040500C)
-///
-/// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h:335`
-pub const LCPU_PATCH_CODE_START_ADDR_S_LETTER: usize = 0x2040_500C;
+    /// 补丁代码起始地址
+    ///
+    /// 位于 Header 之后 (0x20405000 + 12 = 0x2040500C)
+    ///
+    /// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h:335`
+    const CODE_START: usize = 0x2040_500C;
 
-/// 补丁缓冲区大小 (Letter Series)
-///
-/// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h:337`
-pub const LCPU_PATCH_BUF_SIZE_LETTER: usize = 0x3000; // 12KB
+    /// 补丁缓冲区大小
+    ///
+    /// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h:337`
+    const BUF_SIZE: usize = 0x3000; // 12KB
 
-/// 补丁代码大小 (Letter Series)
-///
-/// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h:338`
-pub const LCPU_PATCH_CODE_SIZE_LETTER: usize = 0x2FF4; // 12KB - 12 bytes
+    /// 补丁代码大小
+    ///
+    /// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h:338`
+    const CODE_SIZE: usize = 0x2FF4; // 12KB - 12 bytes
+
+    /// Letter Series 补丁 Header 魔数
+    ///
+    /// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/lcpu_patch_rev_b.c:60`
+    const MAGIC: u32 = 0x4843_4150; // "PACH" (little-endian)
+
+    /// Header 中的 entry_count 固定值
+    const ENTRY_COUNT: u32 = 7;
+}
 
 // ===== 通用常量 =====
 
@@ -141,17 +161,13 @@ pub const LCPU_PATCH_CODE_SIZE_LETTER: usize = 0x2FF4; // 12KB - 12 bytes
 #[allow(dead_code)]
 const PATCH_TAG: u32 = 0x5054_4348; // "PTCH" (big-endian in memory)
 
-/// Letter Series 补丁 Header 魔数
-///
-/// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/lcpu_patch_rev_b.c:60`
-const PATCH_MAGIC_LETTER: u32 = 0x4843_4150; // "PACH" (little-endian)
-
 //=============================================================================
 // 错误类型
 //=============================================================================
 
 /// 补丁安装错误
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Error {
     /// 补丁记录为空
     EmptyRecord,
@@ -172,34 +188,6 @@ pub enum Error {
         /// 版本 ID
         revid: u8,
     },
-}
-
-#[cfg(feature = "defmt")]
-impl defmt::Format for Error {
-    fn format(&self, fmt: defmt::Formatter) {
-        match self {
-            Self::EmptyRecord => {
-                defmt::write!(fmt, "EmptyRecord");
-            }
-            Self::EmptyCode => {
-                defmt::write!(fmt, "EmptyCode");
-            }
-            Self::CodeTooLarge {
-                size_bytes,
-                max_bytes,
-            } => {
-                defmt::write!(
-                    fmt,
-                    "CodeTooLarge {{ size_bytes: {=usize}, max_bytes: {=usize} }}",
-                    size_bytes,
-                    max_bytes
-                );
-            }
-            Self::InvalidRevision { revid } => {
-                defmt::write!(fmt, "InvalidRevision {{ revid: {=u8} }}", revid);
-            }
-        }
-    }
 }
 
 //=============================================================================
@@ -264,9 +252,9 @@ pub fn install(idr: &Idr, list: &[u32], bin: &[u32]) -> Result<(), Error> {
 ///
 /// # 安装步骤
 ///
-/// 1. 复制补丁记录数组到 [`LCPU_PATCH_RECORD_ADDR_A3`]
+/// 1. 复制补丁记录数组到 A3 补丁记录区
 /// 2. 清零补丁代码区 (8KB)
-/// 3. 复制补丁代码到 [`LCPU_PATCH_START_ADDR_S_A3`]
+/// 3. 复制补丁代码到 A3 补丁代码区
 ///
 /// # Arguments
 ///
@@ -282,10 +270,10 @@ pub fn install(idr: &Idr, list: &[u32], bin: &[u32]) -> Result<(), Error> {
 /// - SDK: `lcpu_patch_install()` in `lcpu_patch.c:537-549`
 fn install_a3(list: &[u32], bin: &[u32]) -> Result<(), Error> {
     let code_size = core::mem::size_of_val(bin);
-    if code_size > LCPU_PATCH_TOTAL_SIZE_A3 {
+    if code_size > A3PatchLayout::TOTAL_SIZE {
         return Err(Error::CodeTooLarge {
             size_bytes: code_size,
-            max_bytes: LCPU_PATCH_TOTAL_SIZE_A3,
+            max_bytes: A3PatchLayout::TOTAL_SIZE,
         });
     }
 
@@ -297,15 +285,15 @@ fn install_a3(list: &[u32], bin: &[u32]) -> Result<(), Error> {
 
     unsafe {
         // 1. 复制补丁记录 (entry list)
-        let record_dst = LCPU_PATCH_RECORD_ADDR_A3 as *mut u32;
+        let record_dst = A3PatchLayout::RECORD_ADDR as *mut u32;
         core::ptr::copy_nonoverlapping(list.as_ptr(), record_dst, list.len());
 
         // 2. 清零补丁代码区
-        let code_dst = LCPU_PATCH_START_ADDR_S_A3 as *mut u8;
-        core::ptr::write_bytes(code_dst, 0, LCPU_PATCH_TOTAL_SIZE_A3);
+        let code_dst = A3PatchLayout::CODE_START as *mut u8;
+        core::ptr::write_bytes(code_dst, 0, A3PatchLayout::TOTAL_SIZE);
 
         // 3. 复制补丁代码
-        let code_dst = LCPU_PATCH_START_ADDR_S_A3 as *mut u32;
+        let code_dst = A3PatchLayout::CODE_START as *mut u32;
         core::ptr::copy_nonoverlapping(bin.as_ptr(), code_dst, bin.len());
     }
 
@@ -317,12 +305,12 @@ fn install_a3(list: &[u32], bin: &[u32]) -> Result<(), Error> {
 ///
 /// # 安装步骤
 ///
-/// 1. 写入 Header (12 bytes) 到 [`LCPU_PATCH_BUF_START_ADDR_LETTER`]
+/// 1. 写入 Header (12 bytes) 到 Letter Series 补丁缓冲区起始地址
 ///    - Magic: `0x48434150` ("PACH")
 ///    - Entry count: `7` (固定值,参考 SDK)
-///    - Code address: [`LCPU_PATCH_CODE_START_ADDR_S_LETTER`] + 1 (Thumb bit)
+///    - Code address: 补丁代码地址 + 1 (Thumb bit)
 /// 2. 清零补丁代码区 (约 12KB)
-/// 3. 复制补丁代码到 [`LCPU_PATCH_CODE_START_ADDR_S_LETTER`]
+/// 3. 复制补丁代码到 Letter Series 补丁代码区
 ///
 /// # Arguments
 ///
@@ -338,10 +326,10 @@ fn install_a3(list: &[u32], bin: &[u32]) -> Result<(), Error> {
 /// - SDK: `lcpu_patch_install_rev_b()` in `lcpu_patch_rev_b.c:58-73`
 fn install_letter(_list: &[u32], bin: &[u32]) -> Result<(), Error> {
     let code_size = core::mem::size_of_val(bin);
-    if code_size > LCPU_PATCH_CODE_SIZE_LETTER {
+    if code_size > LetterPatchLayout::CODE_SIZE {
         return Err(Error::CodeTooLarge {
-        size_bytes: code_size,
-        max_bytes: LCPU_PATCH_CODE_SIZE_LETTER,
+            size_bytes: code_size,
+            max_bytes: LetterPatchLayout::CODE_SIZE,
         });
     }
 
@@ -354,19 +342,19 @@ fn install_letter(_list: &[u32], bin: &[u32]) -> Result<(), Error> {
         // 1. 写入 Header (12 bytes)
         // Reference: lcpu_patch_rev_b.c:60-66
         let header = [
-            PATCH_MAGIC_LETTER,                                   // magic: "PACH"
-            7,                                                    // entry_count (固定值)
-            LCPU_PATCH_CODE_START_ADDR_S_LETTER as u32 + 1,      // code_addr (Thumb bit)
+            LetterPatchLayout::MAGIC,                          // magic: "PACH"
+            LetterPatchLayout::ENTRY_COUNT,                    // entry_count (固定值)
+            LetterPatchLayout::CODE_START as u32 + 1,          // code_addr (Thumb bit)
         ];
-        let header_dst = LCPU_PATCH_BUF_START_ADDR_LETTER as *mut u32;
+        let header_dst = LetterPatchLayout::BUF_START as *mut u32;
         core::ptr::copy_nonoverlapping(header.as_ptr(), header_dst, 3);
 
         // 2. 清零补丁代码区
-        let code_dst = LCPU_PATCH_CODE_START_ADDR_S_LETTER as *mut u8;
-        core::ptr::write_bytes(code_dst, 0, LCPU_PATCH_CODE_SIZE_LETTER);
+        let code_dst = LetterPatchLayout::CODE_START as *mut u8;
+        core::ptr::write_bytes(code_dst, 0, LetterPatchLayout::CODE_SIZE);
 
         // 3. 复制补丁代码
-        let code_dst = LCPU_PATCH_CODE_START_ADDR_S_LETTER as *mut u32;
+        let code_dst = LetterPatchLayout::CODE_START as *mut u32;
         core::ptr::copy_nonoverlapping(bin.as_ptr(), code_dst, bin.len());
     }
 

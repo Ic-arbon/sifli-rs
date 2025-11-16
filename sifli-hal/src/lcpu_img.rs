@@ -7,15 +7,42 @@ use core::ptr;
 
 use crate::syscfg::Idr;
 
+/// LPSYS RAM 布局信息（HCPU 视角，仅 SF32LB52x）
+///
+/// - 基地址与大小来源：`SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h`
+/// - 目前仅用于 LCPU 代码装载区域
+#[derive(Debug, Clone, Copy)]
+pub struct LpsysRam;
+
+impl LpsysRam {
+    /// LPSYS RAM base address (HCPU view)
+    pub const BASE: usize = 0x2040_0000;
+
+    /// LPSYS RAM size for A3 and earlier revisions (24KB)
+    /// Reference: SiFli-SDK `mem_map.h` `LPSYS_RAM_SIZE`
+    pub const SIZE: usize = 24 * 1024;
+
+    /// LCPU code start address for SF32LB52x
+    ///
+    /// 对于 SF32LB52x，LCPU 代码区与 LPSYS RAM 基址一致。
+    pub const CODE_START: usize = Self::BASE;
+}
+
 /// LPSYS RAM base address (HCPU view)
-pub const LPSYS_RAM_BASE: usize = 0x2040_0000;
+///
+/// 新代码建议优先使用 [`LpsysRam::BASE`]。
+pub const LPSYS_RAM_BASE: usize = LpsysRam::BASE;
 
 /// LCPU code start address for SF32LB52x
-pub const LCPU_CODE_START_ADDR: usize = LPSYS_RAM_BASE;
+///
+/// 新代码建议优先使用 [`LpsysRam::CODE_START`]。
+pub const LCPU_CODE_START_ADDR: usize = LpsysRam::CODE_START;
 
 /// LPSYS RAM size for A3 and earlier revisions (24KB)
 /// Reference: SiFli-SDK `mem_map.h` `LPSYS_RAM_SIZE`
-pub const LPSYS_RAM_SIZE: usize = 24 * 1024;
+///
+/// 新代码建议优先使用 [`LpsysRam::SIZE`]。
+pub const LPSYS_RAM_SIZE: usize = LpsysRam::SIZE;
 
 /// LCPU image installation error
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,16 +86,16 @@ pub fn install(idr: &Idr, image_words: &[u32]) -> Result<(), Error> {
     // 仅 A3 及更早的版本需要写入 LCPU 镜像
     if !revision.is_letter_series() {
         let size_bytes = core::mem::size_of_val(image_words);
-        if size_bytes > LPSYS_RAM_SIZE {
+        if size_bytes > LpsysRam::SIZE {
             error!(
                 "LCPU image too large: {} bytes (max {} bytes)",
                 size_bytes,
-                LPSYS_RAM_SIZE
+                LpsysRam::SIZE
             );
 
             return Err(Error::ImageTooLarge {
                 size_bytes,
-                max_bytes: LPSYS_RAM_SIZE,
+                max_bytes: LpsysRam::SIZE,
             });
         }
 
@@ -97,7 +124,7 @@ pub fn install(idr: &Idr, image_words: &[u32]) -> Result<(), Error> {
 /// - LCPU 处于停止或复位状态，不会访问该内存区域
 #[inline]
 unsafe fn install_image_unsafe(image_words: &[u32]) {
-    let dst = LCPU_CODE_START_ADDR as *mut u32;
+    let dst = LpsysRam::CODE_START as *mut u32;
     let len = image_words.len();
 
     // 使用 copy_nonoverlapping 高效复制 LCPU 镜像到 LPSYS RAM
