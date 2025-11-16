@@ -146,151 +146,6 @@ impl LockCore {
     }
 }
 
-/// Mailbox register block structure (matching C HAL)
-///
-/// This represents the hardware register layout for ONE channel within a mailbox peripheral.
-/// The full mailbox has 4 channels (C1-C4), each with this register layout.
-/// Each register group controls 16 interrupt lines (INT0-INT15).
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct MailboxChannelRegs {
-    /// Interrupt Enable Register - enables specific interrupt channels
-    pub ier: u32,
-    /// Interrupt Trigger Register - triggers interrupts to the other core
-    pub itr: u32,
-    /// Interrupt Clear Register - clears pending interrupts
-    pub icr: u32,
-    /// Interrupt Status Register - raw interrupt status
-    pub isr: u32,
-    /// Masked Interrupt Status Register - masked interrupt status (ISR & IER)
-    pub misr: u32,
-    /// Exclusive (Mutex) Register - for mutex lock/unlock operations
-    pub exr: u32,
-}
-
-/// Complete mailbox peripheral with 4 channels
-///
-/// MAILBOX1 (H2L_MAILBOX @ 0x50082000): Used by HCPU to send to LCPU
-/// MAILBOX2 (L2H_MAILBOX @ 0x40002000): Used by LCPU to send to HCPU
-#[repr(C)]
-pub struct MailboxRegs {
-    pub c1: MailboxChannelRegs,
-    pub c2: MailboxChannelRegs,
-    pub c3: MailboxChannelRegs,
-    pub c4: MailboxChannelRegs,
-}
-
-/// Helper functions for mailbox operations
-impl MailboxChannelRegs {
-    /// Mask (disable) interrupt for the specified channel
-    #[inline]
-    pub fn mask_channel(&mut self, channel: Channel) {
-        unsafe {
-            core::ptr::write_volatile(&mut self.ier as *mut u32,
-                core::ptr::read_volatile(&self.ier as *const u32) & !(channel.mask()));
-        }
-    }
-
-    /// Unmask (enable) interrupt for the specified channel
-    #[inline]
-    pub fn unmask_channel(&mut self, channel: Channel) {
-        unsafe {
-            core::ptr::write_volatile(&mut self.ier as *mut u32,
-                core::ptr::read_volatile(&self.ier as *const u32) | channel.mask());
-        }
-    }
-
-    /// Trigger interrupt on the specified channel
-    #[inline]
-    pub fn trigger_channel(&mut self, channel: Channel) {
-        unsafe {
-            core::ptr::write_volatile(&mut self.itr as *mut u32, channel.mask());
-        }
-    }
-
-    /// Check if interrupt is pending on the specified channel
-    #[inline]
-    pub fn is_channel_pending(&self, channel: Channel) -> bool {
-        unsafe {
-            (core::ptr::read_volatile(&self.isr as *const u32) & channel.mask()) != 0
-        }
-    }
-
-    /// Clear interrupt on the specified channel
-    #[inline]
-    pub fn clear_channel(&mut self, channel: Channel) {
-        unsafe {
-            core::ptr::write_volatile(&mut self.icr as *mut u32, channel.mask());
-        }
-    }
-
-    /// Get the masked interrupt status (all channels)
-    #[inline]
-    pub fn get_status(&self) -> u32 {
-        unsafe {
-            core::ptr::read_volatile(&self.misr as *const u32)
-        }
-    }
-
-    /// Clear all interrupts with the specified status mask
-    #[inline]
-    pub fn clear_status(&mut self, status: u32) {
-        unsafe {
-            core::ptr::write_volatile(&mut self.icr as *mut u32, status);
-        }
-    }
-
-    /// Try to lock the mutex
-    ///
-    /// Returns the core that holds the lock, or Unlocked if successfully acquired
-    pub fn try_lock(&self) -> LockCore {
-        unsafe {
-            let exr = core::ptr::read_volatile(&self.exr as *const u32);
-            // Bit 0 (EX): 1 = unlocked, 0 = locked
-            // Bits [2:1] (ID): Core ID that holds the lock
-            if (exr & 0x1) != 0 {
-                LockCore::Unlocked
-            } else {
-                let core_id = ((exr >> 1) & 0x3) as u8;
-                LockCore::from_u8(core_id)
-            }
-        }
-    }
-
-    /// Unlock the mutex
-    ///
-    /// # Safety
-    /// This should only be called by the core that currently holds the lock
-    pub unsafe fn unlock(&mut self) {
-        core::ptr::write_volatile(&mut self.exr as *mut u32,
-            core::ptr::read_volatile(&self.exr as *const u32) | 0x1);
-    }
-}
-
-/// RAII guard for mutex lock
-///
-/// The mutex is automatically unlocked when this guard is dropped.
-pub struct MutexGuard<'a> {
-    regs: &'a mut MailboxChannelRegs,
-}
-
-impl<'a> Drop for MutexGuard<'a> {
-    fn drop(&mut self) {
-        unsafe {
-            self.regs.unlock();
-        }
-    }
-}
-
-/// Mailbox base addresses (matching C SDK register.h)
-pub mod addrs {
-    /// MAILBOX1 base address (HPSYS mailbox for H2L communication)
-    pub const MAILBOX1_BASE: usize = 0x50082000;
-
-    /// MAILBOX2 base address (LPSYS mailbox for L2H communication)
-    pub const MAILBOX2_BASE: usize = 0x40002000;
-}
-
 // /// Get a pointer to MAILBOX1 channel registers
 // ///
 // /// # Safety
@@ -307,7 +162,6 @@ pub mod addrs {
 //     &mut *(addrs::MAILBOX2_BASE as *mut MailboxChannelRegs)
 // }
 
-
 // TODO: When PAC support is available, implement the following:
 // - Mailbox driver struct with Peripheral trait
 // - Interrupt handlers
@@ -320,6 +174,7 @@ use core::marker::PhantomData;
 //
 // ```rust,ignore
 use embassy_hal_internal::{into_ref, Peripheral, PeripheralRef};
+use sifli_pac::mailbox::Mailbox1;
 
 use crate::{interrupt, rcc::RccEnableReset};
 //
@@ -342,12 +197,57 @@ impl<'d, T: Instance> Mailbox<'d, T> {
     pub fn mask_channel(&mut self, channel: Channel) {
         T::regs().mask_channel(channel);
     }
+
     // ... other methods
 }
 
+/// Helper functions for mailbox operations
+impl<'d, T: Instance> Mailbox<'d, T> {
+    /// Mask (disable) interrupt for the specified channel
+    #[inline]
+    pub fn mask_channel(&mut self, channel: Channel) {
+        let r = T::regs();
+        todo!()
+    }
+
+    /// Unmask (enable) interrupt for the specified channel
+    #[inline]
+    pub fn unmask_channel(&mut self, channel: Channel) {
+        let r = T::regs();
+        todo!()
+    }
+
+    /// Trigger interrupt on the specified channel
+    #[inline]
+    pub fn trigger_channel(&mut self, channel: Channel) {
+        let r = T::regs();
+        todo!()
+        // r.itr(channel.index().into())
+        //     .write(|itr| itr.set_int(channel.index() as usize, true));
+    }
+
+    /// Check if interrupt is pending on the specified channel
+    #[inline]
+    pub fn is_channel_pending(&self, channel: Channel) -> bool {
+        todo!()
+    }
+
+    /// Clear interrupt on the specified channel
+    #[inline]
+    pub fn clear_channel(&mut self, channel: Channel) {
+        todo!()
+    }
+
+    /// Get the masked interrupt status (all channels)
+    #[inline]
+    pub fn get_status(&self) -> u32 {
+        todo!()
+    }
+}
+
 pub trait Instance: RccEnableReset + 'static {
-    type Interrupt: interrupt::typelevel::Interrupt;
-    fn regs() -> &'static mut MailboxChannelRegs;
+    // type Interrupt: interrupt::typelevel::Interrupt;
+    fn regs() -> Mailbox1;
 }
 
 /// Interrupt handler.
@@ -355,19 +255,17 @@ pub struct InterruptHandler<T: Instance> {
     _phantom: PhantomData<T>,
 }
 
-impl<T: Instance> interrupt::typelevel::Handler<T::Interrupt> for InterruptHandler<T> {
-    unsafe fn on_interrupt() {
-        todo!()
-    }
-}
+// impl<T: Instance> interrupt::typelevel::Handler<T::Interrupt> for InterruptHandler<T> {
+//     unsafe fn on_interrupt() {
+//         todo!()
+//     }
+// }
 
 impl Instance for crate::peripherals::MAILBOX1 {
-    type Interrupt = crate::interrupt::typelevel::MAILBOX2_CH1;
-    
-    fn regs() -> &'static mut MailboxChannelRegs {
-        unsafe {
-            &mut *(addrs::MAILBOX2_BASE as *mut MailboxChannelRegs)
-        }
+    // The interrupt triggers when hcpu receives data from lcpu from MAILBOX2?
+    // type Interrupt = crate::interrupt::typelevel::MAILBOX2_CH1;
+
+    fn regs() -> Mailbox1 {
+        crate::pac::MAILBOX1
     }
 }
-// ```
