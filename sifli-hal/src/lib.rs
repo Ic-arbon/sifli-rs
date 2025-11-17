@@ -1,6 +1,5 @@
-#![cfg_attr(not(test), no_std)]
+#![no_std]
 #![doc = include_str!("../README.md")]
-#![allow(unsafe_op_in_unsafe_fn)]
 
 // This mod MUST go first, so that the others see its macros.
 pub(crate) mod fmt;
@@ -17,16 +16,21 @@ pub mod gpio;
 pub mod timer;
 pub mod time;
 pub mod pmu;
-pub mod efuse;
+pub mod lpsys_rcc;
+pub mod syscfg;
 #[allow(clippy::all)] // modified from embassy-stm32
 pub mod usart;
 pub mod adc;
 pub mod lcdc;
 #[allow(clippy::all)] // modified from embassy-stm32
 pub mod dma;
-pub mod mailbox;
 #[cfg(feature = "usb")]
 pub mod usb;
+pub mod efuse;
+pub mod lcpu_img;
+pub mod lcpu;
+pub mod lpaon;
+pub mod hpaon;
 #[cfg(feature = "_time-driver")]
 pub mod time_driver;
 
@@ -76,7 +80,7 @@ pub mod config {
     impl Default for Config {
         fn default() -> Self {
             Self {
-                rcc: rcc::Config::default(),
+                rcc: rcc::Config::new_keep(),
                 gpio1_it_priority: interrupt::Priority::P3,
             }
         }
@@ -97,7 +101,7 @@ pub fn init(config: Config) -> Peripherals {
     let p = Peripherals::take();
 
     unsafe {
-        rcc::init(config.rcc);
+        config.rcc.apply();
 
         #[cfg(feature = "_time-driver")]
         time_driver::init();
@@ -152,24 +156,6 @@ pub fn blocking_delay_us(us: u32) {
     embassy_time::block_for(embassy_time::Duration::from_micros(us as u64));
     #[cfg(not(feature = "time"))]
     cortex_m_blocking_delay_us(us);
-}
-
-/// Converts a address to a System Bus address.
-/// `HCPU_MPI_SBUS_ADDR``
-pub fn to_system_bus_addr(addr: usize) -> usize {
-    match addr {
-        0x1000_0000..0x2000_0000 => addr + 0x5000_0000,
-        _ => addr,
-    }
-}
-
-/// Converts a address to a Code Bus address.
-/// `HCPU_MPI_CBUS_ADDR``
-pub fn to_code_bus_addr(addr: usize) -> usize {
-    match addr {
-        0x6000_0000..0x7000_0000 => addr - 0x5000_0000,
-        _ => addr,
-    }
 }
 
 /// Macro to bind interrupts to handlers.
