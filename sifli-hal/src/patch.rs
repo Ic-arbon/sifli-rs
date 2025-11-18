@@ -6,7 +6,7 @@
 //! use sifli_hal::{patch, syscfg};
 //!
 //! let idr = syscfg::read_idr();
-//! patch::install(&idr, &PATCH_LIST, &PATCH_BIN)?;
+//! patch::install(&idr, &PATCH_LIST_BYTES, &PATCH_BIN_BYTES)?;
 //! ```
 
 use crate::syscfg::Idr;
@@ -60,6 +60,7 @@ impl LetterPatchLayout {
     /// Patch buffer size.
     ///
     /// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h:337`
+    #[allow(dead_code)]
     const BUF_SIZE: usize = 0x3000; // 12KB
 
     /// Patch code usable size.
@@ -123,9 +124,9 @@ pub enum Error {
 /// use sifli_hal::{patch, syscfg};
 ///
 /// let idr = syscfg::read_idr();
-/// patch::install(&idr, &PATCH_LIST, &PATCH_BIN)?;
+/// patch::install(&idr, &PATCH_LIST_BYTES, &PATCH_BIN_BYTES)?;
 /// ```
-pub fn install(idr: &Idr, list: &[u32], bin: &[u32]) -> Result<(), Error> {
+pub fn install(idr: &Idr, list: &[u8], bin: &[u8]) -> Result<(), Error> {
     // Parameter validation.
     if list.is_empty() {
         return Err(Error::EmptyRecord);
@@ -148,8 +149,8 @@ pub fn install(idr: &Idr, list: &[u32], bin: &[u32]) -> Result<(), Error> {
 }
 
 /// Install A3 / earlier-format patches (internal).
-fn install_a3(list: &[u32], bin: &[u32]) -> Result<(), Error> {
-    let code_size = core::mem::size_of_val(bin);
+fn install_a3(list: &[u8], bin: &[u8]) -> Result<(), Error> {
+    let code_size = bin.len();
     if code_size > A3PatchLayout::TOTAL_SIZE {
         return Err(Error::CodeTooLarge {
             size_bytes: code_size,
@@ -158,22 +159,22 @@ fn install_a3(list: &[u32], bin: &[u32]) -> Result<(), Error> {
     }
 
     debug!(
-        "Installing A3 patch: record={} words, code={} bytes",
+        "Installing A3 patch: record={} bytes, code={} bytes",
         list.len(),
         code_size
     );
 
     unsafe {
         // 1. Copy patch record list (entry list).
-        let record_dst = A3PatchLayout::RECORD_ADDR as *mut u32;
+        let record_dst = A3PatchLayout::RECORD_ADDR as *mut u8;
         core::ptr::copy_nonoverlapping(list.as_ptr(), record_dst, list.len());
 
-        // 2. Clear patch code area.
+        // 2. Clear patch code area (bytes).
         let code_dst = A3PatchLayout::CODE_START as *mut u8;
         core::ptr::write_bytes(code_dst, 0, A3PatchLayout::TOTAL_SIZE);
 
-        // 3. Copy patch code.
-        let code_dst = A3PatchLayout::CODE_START as *mut u32;
+        // 3. Copy patch code as raw bytes.
+        let code_dst = A3PatchLayout::CODE_START as *mut u8;
         core::ptr::copy_nonoverlapping(bin.as_ptr(), code_dst, bin.len());
     }
 
@@ -182,8 +183,8 @@ fn install_a3(list: &[u32], bin: &[u32]) -> Result<(), Error> {
 }
 
 /// Install Letter-Series patches (internal).
-fn install_letter(_list: &[u32], bin: &[u32]) -> Result<(), Error> {
-    let code_size = core::mem::size_of_val(bin);
+fn install_letter(_list: &[u8], bin: &[u8]) -> Result<(), Error> {
+    let code_size = bin.len();
     if code_size > LetterPatchLayout::CODE_SIZE {
         return Err(Error::CodeTooLarge {
             size_bytes: code_size,
@@ -210,8 +211,8 @@ fn install_letter(_list: &[u32], bin: &[u32]) -> Result<(), Error> {
         let code_dst = LetterPatchLayout::CODE_START as *mut u8;
         core::ptr::write_bytes(code_dst, 0, LetterPatchLayout::CODE_SIZE);
 
-        // 3. Copy patch code.
-        let code_dst = LetterPatchLayout::CODE_START as *mut u32;
+        // 3. Copy patch code as raw bytes.
+        let code_dst = LetterPatchLayout::CODE_START as *mut u8;
         core::ptr::copy_nonoverlapping(bin.as_ptr(), code_dst, bin.len());
     }
 
