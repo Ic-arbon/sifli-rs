@@ -1,60 +1,119 @@
 //! Mailbox HAL driver
 //!
-//! The Mailbox HAL driver provides high-level APIs for using the hardware mailbox module.
-//! Each subsystem has a hardware mailbox module that can be used to:
-//! - Trigger interrupts to notify other subsystems (e.g., HPSYS mailbox group H2L_MAILBOX
-//!   triggers LPSYS interrupts)
-//! - Protect shared hardware resources across multiple subsystems using mutex channels
+//! The Mailbox provides hardware-assisted inter-processor communication between
+//! HCPU and LCPU subsystems on SF32LB52x chips.
 //!
-//! ## Features
+//! ## Hardware Architecture
 //!
-//! - Each mailbox group has 16 channels, allowing simultaneous triggering of all interrupts
-//! - Mailbox interrupts can automatically wake up subsystems in LIGHT/DEEP/STANDBY low-power modes
-//! - Mutex channels to protect shared resources, accessible from all subsystems
+//! - Two independent mailbox peripherals:
+//!   - `MAILBOX1`: HCPU transmits → LCPU receives
+//!   - `MAILBOX2`: LCPU transmits → HCPU receives (not yet in PAC)
+//! - Each mailbox has 4 channels
+//! - Each channel has 16 independent interrupt bits (0-15)
+//! - Mutex functionality via exclusive registers (CxEXR)
 //!
-//! ## Available Resources
+//! ## Key Design Principle
 //!
-//! ### HPSYS (High-Power Subsystem)
-//! - `MAILBOX1` (H2L_MAILBOX) - Mailbox for HCPU to LCPU communication
-//! - Mutex channels (HMUTEX_CH1-4)
+//! MAILBOX1 and MAILBOX2 are **unidirectional**. On HCPU:
+//! - MAILBOX1 is transmit-only (no interrupt)
+//! - MAILBOX2 is receive-only (with interrupt)
 //!
-//! ### LPSYS (Low-Power Subsystem)
-//! - `MAILBOX2` (L2H_MAILBOX) - Mailbox for LCPU to HCPU communication
-//! - Mutex channels (LMUTEX_CH1-2)
+//! Therefore we have two separate types: `TxMailbox` and `RxMailbox`.
 //!
-//! ## Hardware Register Structure
+//! ## Basic Usage
 //!
-//! Each mailbox channel has the following registers:
-//! - CxIER: Interrupt Enable Register
-//! - CxITR: Interrupt Trigger Register
-//! - CxICR: Interrupt Clear Register
-//! - CxISR: Interrupt Status Register
-//! - CxMISR: Masked Interrupt Status Register
-//! - CxEXR: Exclusive (Mutex) Register
+//! ### Transmit (HCPU side with MAILBOX1)
 //!
-//! ## Note
+//! ```no_run
+//! # use sifli_hal::{mailbox, bind_interrupts, peripherals};
+//! # let p = unsafe { peripherals::Peripherals::steal() };
+//! // Create transmit mailbox
+//! let mut tx = mailbox::TxMailbox::new(p.MAILBOX1);
 //!
-//! This is a hardware abstraction layer that provides safe access to mailbox functionality.
-//! The actual peripheral instances and interrupts must be properly configured in the PAC.
-//! Currently, this module provides the types and interfaces, with actual peripheral
-//! implementations to be added when PAC support is available.
+//! // Trigger interrupt on LCPU side
+//! tx.trigger(mailbox::Channel::CH0, 0); // trigger bit 0 on channel 0
+//! tx.trigger(mailbox::Channel::CH1, 5); // trigger bit 5 on channel 1
+//!
+//! // Or trigger multiple bits at once
+//! tx.trigger_mask(mailbox::Channel::CH0, 0b1111); // trigger bits 0-3
+//! ```
+//!
+//! ### Receive (HCPU side with MAILBOX2, when available in PAC)
+//!
+//! ```no_run,ignore
+//! # use sifli_hal::{mailbox, bind_interrupts, peripherals};
+//! # let p = unsafe { peripherals::Peripherals::steal() };
+//! bind_interrupts!(struct Irqs {
+//!     MAILBOX2_CH1 => mailbox::InterruptHandler<peripherals::MAILBOX2>;
+//! });
+//!
+//! let mut rx = mailbox::RxMailbox::new(p.MAILBOX2, Irqs);
+//!
+//! // Enable specific interrupt bits
+//! rx.enable_channel(mailbox::Channel::CH0, 0);
+//!
+//! // In interrupt handler or polling:
+//! if rx.is_pending(mailbox::Channel::CH0, 0) {
+//!     // Handle interrupt
+//!     rx.clear(mailbox::Channel::CH0, 0);
+//! }
+//! ```
+//!
+//! ## Mutex Usage
+//!
+//! Mailbox channels can be used as hardware mutex to synchronize access to
+//! shared resources between cores:
+//!
+//! ```no_run
+//! # use sifli_hal::{mailbox, peripherals};
+//! # let p = unsafe { peripherals::Peripherals::steal() };
+//! use mailbox::MutexOps;
+//!
+//! let tx = mailbox::TxMailbox::new(p.MAILBOX1);
+//!
+//! // Try to acquire lock
+//! match TxMailbox::<_>::lock(mailbox::Channel::CH0) {
+//!     mailbox::LockCore::Unlocked => {
+//!         // Lock acquired, do critical work
+//!         // ...
+//!         unsafe { TxMailbox::<_>::unlock(mailbox::Channel::CH0) };
+//!     }
+//!     core => {
+//!         // Lock held by another core
+//!         println!("Lock held by {:?}", core);
+//!     }
+//! }
+//! ```
+//!
+//! ## Implementation Notes
+//!
+//! - Currently only MAILBOX1 is supported (transmit-only on HCPU)
+//! - MAILBOX2 support will be added when it's available in sifli-pac
+//! - The C SDK uses a single struct with irqn polarity to distinguish TX/RX,
+//!   but this Rust implementation uses separate types for better type safety
+//! - No state machine overhead - direct register access only
 
-use crate::_generated::interrupt::typelevel::Interrupt;
 
-/// Mailbox channel identifier (0-15)
+use core::marker::PhantomData;
+
+use embassy_hal_internal::{into_ref, Peripheral, PeripheralRef};
+
+use crate::interrupt;
+use crate::interrupt::typelevel::Interrupt as _;
+use crate::pac::mailbox::Mailbox1;
+use crate::rcc::RccEnableReset;
+
+/// Mailbox channel identifier (0-3)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Channel(u8);
 
 impl Channel {
-    /// Maximum number of channels
-    pub const MAX_CHANNELS: u8 = 16;
-
-    /// Create a new channel (0-15)
+    /// Create a new channel (0-3)
     ///
-    /// Returns `None` if the channel number is >= 16
+    /// Returns `None` if the channel number is >= 4
     #[inline]
     pub const fn new(channel: u8) -> Option<Self> {
-        if channel < Self::MAX_CHANNELS {
+        if channel < 4 {
             Some(Channel(channel))
         } else {
             None
@@ -64,54 +123,28 @@ impl Channel {
     /// Create a new channel without bounds checking
     ///
     /// # Safety
-    /// The caller must ensure that `channel` is in range 0-15
+    /// The caller must ensure that `channel` is in range 0-3
     #[inline]
     pub const unsafe fn new_unchecked(channel: u8) -> Self {
         Channel(channel)
     }
 
-    /// Convert channel to bit mask
-    #[inline]
-    pub const fn mask(self) -> u32 {
-        1u32 << self.0
-    }
-
     /// Get channel index
     #[inline]
-    pub const fn index(self) -> u8 {
-        self.0
+    pub const fn index(self) -> usize {
+        self.0 as usize
     }
 }
 
-// Predefined channel constants for convenience
 impl Channel {
+    /// Channel 0
     pub const CH0: Self = Channel(0);
+    /// Channel 1
     pub const CH1: Self = Channel(1);
+    /// Channel 2
     pub const CH2: Self = Channel(2);
+    /// Channel 3
     pub const CH3: Self = Channel(3);
-    pub const CH4: Self = Channel(4);
-    pub const CH5: Self = Channel(5);
-    pub const CH6: Self = Channel(6);
-    pub const CH7: Self = Channel(7);
-    pub const CH8: Self = Channel(8);
-    pub const CH9: Self = Channel(9);
-    pub const CH10: Self = Channel(10);
-    pub const CH11: Self = Channel(11);
-    pub const CH12: Self = Channel(12);
-    pub const CH13: Self = Channel(13);
-    pub const CH14: Self = Channel(14);
-    pub const CH15: Self = Channel(15);
-}
-
-/// Mailbox driver state
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum State {
-    /// Mailbox not yet initialized or disabled
-    Reset,
-    /// Mailbox initialized and ready for use
-    Ready,
-    /// Mailbox internal processing is ongoing
-    Busy,
 }
 
 /// Mutex lock core identifier
@@ -129,13 +162,14 @@ pub enum LockCore {
 }
 
 impl LockCore {
-    fn from_u8(value: u8) -> Self {
-        match value {
+    /// Convert from register value
+    pub(crate) fn from_bits(value: u8) -> Self {
+        match value & 0x3 {
             0 => LockCore::Unlocked,
             1 => LockCore::Hcpu,
             2 => LockCore::Lcpu,
             3 => LockCore::Bcpu,
-            _ => LockCore::Unlocked,
+            _ => unreachable!(),
         }
     }
 
@@ -146,126 +180,288 @@ impl LockCore {
     }
 }
 
-// /// Get a pointer to MAILBOX1 channel registers
-// ///
-// /// # Safety
-// /// Caller must ensure exclusive access and proper synchronization
-// pub unsafe fn mailbox1_regs() -> &'static mut MailboxChannelRegs {
-//     &mut *(addrs::MAILBOX1_BASE as *mut MailboxChannelRegs)
-// }
-
-// /// Get a pointer to MAILBOX2 channel registers
-// ///
-// /// # Safety
-// /// Caller must ensure exclusive access and proper synchronization
-// pub unsafe fn mailbox2_regs() -> &'static mut MailboxChannelRegs {
-//     &mut *(addrs::MAILBOX2_BASE as *mut MailboxChannelRegs)
-// }
-
-// TODO: When PAC support is available, implement the following:
-// - Mailbox driver struct with Peripheral trait
-// - Interrupt handlers
-// - Integration with embassy_hal patterns
-// - Proper RCC enable/reset support
-
-use core::marker::PhantomData;
-
-// Example of future API once PAC is available:
-//
-// ```rust,ignore
-use embassy_hal_internal::{into_ref, Peripheral, PeripheralRef};
-use sifli_pac::mailbox::Mailbox1;
-
-use crate::{interrupt, rcc::RccEnableReset};
-//
-pub struct Mailbox<'d, T: Instance> {
+/// Transmit-only mailbox (e.g., MAILBOX1 on HCPU)
+pub struct TxMailbox<'d, T: TxInstance> {
     _peri: PeripheralRef<'d, T>,
 }
 
-impl<'d, T: Instance> Mailbox<'d, T> {
+impl<'d, T: TxInstance> TxMailbox<'d, T> {
+    /// Create a new transmit mailbox
+    pub fn new(peri: impl Peripheral<P = T> + 'd) -> Self {
+        into_ref!(peri);
+        crate::rcc::enable_and_reset::<T>();
+        Self { _peri: peri }
+    }
+
+    /// Trigger an interrupt on the specified channel and bit
+    ///
+    /// # Arguments
+    /// - `channel`: Channel 0-3
+    /// - `bit`: Interrupt bit 0-15
+    #[inline]
+    pub fn trigger(&mut self, channel: Channel, bit: u8) {
+        assert!(bit < 16, "bit must be 0-15");
+        let regs = T::regs();
+        let idx = channel.index();
+
+        // Write 1 to ITR register to trigger interrupt on remote side
+        regs.itr(idx).write(|w| w.set_int(bit as usize, true));
+    }
+
+    /// Trigger multiple bits at once on a channel
+    ///
+    /// # Arguments
+    /// - `channel`: Channel 0-3
+    /// - `mask`: 16-bit mask where each set bit triggers that interrupt
+    #[inline]
+    pub fn trigger_mask(&mut self, channel: Channel, mask: u16) {
+        let regs = T::regs();
+        let idx = channel.index();
+
+        regs.itr(idx).write(|w| w.0 = mask as u32);
+    }
+}
+
+/// Receive-only mailbox with interrupt support (e.g., MAILBOX2 on HCPU)
+pub struct RxMailbox<'d, T: RxInstance> {
+    _peri: PeripheralRef<'d, T>,
+}
+
+impl<'d, T: RxInstance> RxMailbox<'d, T> {
+    /// Create a new receive mailbox with interrupt handler
     pub fn new(
         peri: impl Peripheral<P = T> + 'd,
         _irq: impl interrupt::typelevel::Binding<T::Interrupt, InterruptHandler<T>> + 'd,
     ) -> Self {
         into_ref!(peri);
-        // T::enable_and_reset();
+        crate::rcc::enable_and_reset::<T>();
+
+        // Enable interrupt
         T::Interrupt::unpend();
         unsafe { T::Interrupt::enable() };
+
         Self { _peri: peri }
     }
 
-    pub fn mask_channel(&mut self, channel: Channel) {
-        T::regs().mask_channel(channel);
+    /// Enable interrupt for a specific channel and bit
+    ///
+    /// # Arguments
+    /// - `channel`: Channel 0-3
+    /// - `bit`: Interrupt bit 0-15
+    #[inline]
+    pub fn enable_channel(&mut self, channel: Channel, bit: u8) {
+        assert!(bit < 16, "bit must be 0-15");
+        let regs = T::regs();
+        let idx = channel.index();
+
+        regs.ier(idx).modify(|w| w.set_int(bit as usize, true));
     }
 
-    // ... other methods
+    /// Disable interrupt for a specific channel and bit
+    #[inline]
+    pub fn disable_channel(&mut self, channel: Channel, bit: u8) {
+        assert!(bit < 16, "bit must be 0-15");
+        let regs = T::regs();
+        let idx = channel.index();
+
+        regs.ier(idx).modify(|w| w.set_int(bit as usize, false));
+    }
+
+    /// Enable multiple bits at once on a channel
+    ///
+    /// # Arguments
+    /// - `channel`: Channel 0-3
+    /// - `mask`: 16-bit mask where each set bit enables that interrupt
+    #[inline]
+    pub fn enable_mask(&mut self, channel: Channel, mask: u16) {
+        let regs = T::regs();
+        let idx = channel.index();
+
+        regs.ier(idx).modify(|w| w.0 |= mask as u32);
+    }
+
+    /// Disable multiple bits at once on a channel
+    #[inline]
+    pub fn disable_mask(&mut self, channel: Channel, mask: u16) {
+        let regs = T::regs();
+        let idx = channel.index();
+
+        regs.ier(idx).modify(|w| w.0 &= !(mask as u32));
+    }
+
+    /// Check if a specific interrupt is pending
+    #[inline]
+    pub fn is_pending(&self, channel: Channel, bit: u8) -> bool {
+        assert!(bit < 16, "bit must be 0-15");
+        let regs = T::regs();
+        let idx = channel.index();
+
+        regs.misr(idx).read().int(bit as usize)
+    }
+
+    /// Get the masked interrupt status for a channel (all 16 bits)
+    #[inline]
+    pub fn pending_mask(&self, channel: Channel) -> u16 {
+        let regs = T::regs();
+        let idx = channel.index();
+
+        (regs.misr(idx).read().0 & 0xFFFF) as u16
+    }
+
+    /// Clear a specific interrupt
+    #[inline]
+    pub fn clear(&mut self, channel: Channel, bit: u8) {
+        assert!(bit < 16, "bit must be 0-15");
+        let regs = T::regs();
+        let idx = channel.index();
+
+        regs.icr(idx).write(|w| w.set_int(bit as usize, true));
+    }
+
+    /// Clear multiple interrupts at once
+    #[inline]
+    pub fn clear_mask(&mut self, channel: Channel, mask: u16) {
+        let regs = T::regs();
+        let idx = channel.index();
+
+        regs.icr(idx).write(|w| w.0 = mask as u32);
+    }
 }
 
-/// Helper functions for mailbox operations
-impl<'d, T: Instance> Mailbox<'d, T> {
-    /// Mask (disable) interrupt for the specified channel
+/// Mutex operations (available on both TX and RX mailboxes)
+pub trait MutexOps {
+    /// Get the mailbox registers
+    fn regs() -> Mailbox1;
+
+    /// Try to lock a mutex channel
+    ///
+    /// Returns `LockCore::Unlocked` if lock was acquired,
+    /// otherwise returns which core currently holds the lock.
     #[inline]
-    pub fn mask_channel(&mut self, channel: Channel) {
-        let r = T::regs();
-        todo!()
+    fn lock(channel: Channel) -> LockCore {
+        let regs = Self::regs();
+        let idx = channel.index();
+
+        // Read EXR register - hardware automatically locks if available
+        let exr = regs.exr(idx).read();
+
+        // Check EX bit (bit 31) - if set, lock was acquired
+        if exr.ex() {
+            LockCore::Unlocked
+        } else {
+            // Lock held by another core, return the ID
+            LockCore::from_bits(exr.id())
+        }
     }
 
-    /// Unmask (enable) interrupt for the specified channel
+    /// Unlock a mutex channel
+    ///
+    /// # Safety
+    /// Caller must ensure they own the lock
     #[inline]
-    pub fn unmask_channel(&mut self, channel: Channel) {
-        let r = T::regs();
-        todo!()
+    unsafe fn unlock(channel: Channel) {
+        let regs = Self::regs();
+        let idx = channel.index();
+
+        // Write EX bit to unlock
+        regs.exr(idx).write(|w| w.set_ex(true));
     }
 
-    /// Trigger interrupt on the specified channel
+    /// Check who holds the lock without attempting to acquire
     #[inline]
-    pub fn trigger_channel(&mut self, channel: Channel) {
-        let r = T::regs();
-        todo!()
-        // r.itr(channel.index().into())
-        //     .write(|itr| itr.set_int(channel.index() as usize, true));
-    }
+    fn lock_status(channel: Channel) -> LockCore {
+        let regs = Self::regs();
+        let idx = channel.index();
 
-    /// Check if interrupt is pending on the specified channel
-    #[inline]
-    pub fn is_channel_pending(&self, channel: Channel) -> bool {
-        todo!()
-    }
+        let exr = regs.exr(idx).read();
 
-    /// Clear interrupt on the specified channel
-    #[inline]
-    pub fn clear_channel(&mut self, channel: Channel) {
-        todo!()
-    }
-
-    /// Get the masked interrupt status (all channels)
-    #[inline]
-    pub fn get_status(&self) -> u32 {
-        todo!()
+        if exr.ex() {
+            LockCore::Unlocked
+        } else {
+            LockCore::from_bits(exr.id())
+        }
     }
 }
 
-pub trait Instance: RccEnableReset + 'static {
-    // type Interrupt: interrupt::typelevel::Interrupt;
+impl<'d, T: TxInstance> MutexOps for TxMailbox<'d, T> {
+    fn regs() -> Mailbox1 {
+        T::regs()
+    }
+}
+
+impl<'d, T: RxInstance> MutexOps for RxMailbox<'d, T> {
+    fn regs() -> Mailbox1 {
+        T::regs()
+    }
+}
+
+/// Transmit mailbox instance trait
+trait SealedTxInstance: RccEnableReset {
     fn regs() -> Mailbox1;
 }
 
-/// Interrupt handler.
-pub struct InterruptHandler<T: Instance> {
+/// Transmit mailbox instance trait
+#[allow(private_bounds)]
+pub trait TxInstance: SealedTxInstance + Peripheral<P = Self> + 'static {}
+
+/// Receive mailbox instance trait
+trait SealedRxInstance: RccEnableReset {
+    fn regs() -> Mailbox1;
+}
+
+/// Receive mailbox instance trait
+#[allow(private_bounds)]
+pub trait RxInstance: SealedRxInstance + Peripheral<P = Self> + 'static {
+    /// Interrupt for this mailbox
+    type Interrupt: interrupt::typelevel::Interrupt;
+}
+
+/// Interrupt handler for receive mailbox
+pub struct InterruptHandler<T: RxInstance> {
     _phantom: PhantomData<T>,
 }
 
-// impl<T: Instance> interrupt::typelevel::Handler<T::Interrupt> for InterruptHandler<T> {
-//     unsafe fn on_interrupt() {
-//         todo!()
-//     }
-// }
+impl<T: RxInstance> interrupt::typelevel::Handler<T::Interrupt> for InterruptHandler<T> {
+    unsafe fn on_interrupt() {
+        let regs = T::regs();
 
-impl Instance for crate::peripherals::MAILBOX1 {
-    // The interrupt triggers when hcpu receives data from lcpu from MAILBOX2?
-    // type Interrupt = crate::interrupt::typelevel::MAILBOX2_CH1;
+        // Process all channels
+        for ch in 0..4 {
+            let misr = regs.misr(ch).read().0 as u16;
+            if misr != 0 {
+                // Clear all pending interrupts for this channel
+                regs.icr(ch).write(|w| w.0 = misr as u32);
 
+                // TODO: Wake user tasks based on channel/bit
+                // This requires async support with waitqueues
+            }
+        }
+    }
+}
+
+// Peripheral implementations
+// These should eventually be moved to _generated.rs
+
+use crate::peripherals;
+
+// MAILBOX1: TX on HCPU, RX on LCPU
+impl SealedTxInstance for peripherals::MAILBOX1 {
     fn regs() -> Mailbox1 {
         crate::pac::MAILBOX1
     }
 }
+
+impl TxInstance for peripherals::MAILBOX1 {}
+
+// TODO: Add MAILBOX2 when it's available in PAC
+// MAILBOX2: RX on HCPU (with interrupt), TX on LCPU
+// impl SealedRxInstance for peripherals::MAILBOX2 {
+//     fn regs() -> Mailbox1 {
+//         crate::pac::MAILBOX2
+//     }
+// }
+//
+// impl RxInstance for peripherals::MAILBOX2 {
+//     // MAILBOX2_CH1 is the receive interrupt on HCPU
+//     type Interrupt = crate::interrupt::typelevel::MAILBOX2_CH1;
+// }
