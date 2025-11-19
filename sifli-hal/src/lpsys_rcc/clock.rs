@@ -127,6 +127,7 @@ pub fn get_macclk_freq() -> Option<Hertz> {
 /// Set/clear the LCPU reset bit (`LPSYS_RCC.RSTR1.LCPU`).
 ///
 /// Primitive write to RSTR1; does not include any waits or side effects.
+#[inline]
 pub fn set_lcpu_reset(enable: bool) {
     LPSYS_RCC.rstr1().modify(|w| w.set_lcpu(enable));
 }
@@ -134,8 +135,29 @@ pub fn set_lcpu_reset(enable: bool) {
 /// Set/clear the BT MAC reset bit (`LPSYS_RCC.RSTR1.MAC`).
 ///
 /// Primitive write to RSTR1; does not include any waits or side effects.
+#[inline]
 pub fn set_mac_reset(enable: bool) {
     LPSYS_RCC.rstr1().modify(|w| w.set_mac(enable));
+}
+
+/// Set/clear the BT RF reset bit (`LPSYS_RCC.RSTR1.RFC`).
+///
+/// Primitive write to RSTR1; does not include any waits or side effects.
+#[inline]
+pub fn set_rfc_reset(enable: bool) {
+    LPSYS_RCC.rstr1().modify(|w| w.set_rfc(enable));
+}
+
+/// Check if the BT RF reset bit (`LPSYS_RCC.RSTR1.RFC`) is set.
+#[inline]
+pub fn get_rfc_reset() -> bool {
+    LPSYS_RCC.rstr1().read().rfc()
+}
+
+/// Get the raw value of the RSTR1 register.
+#[inline]
+pub fn get_rstr1() -> u32 {
+    LPSYS_RCC.rstr1().read().0
 }
 
 /// Get the LPSYS systick clock source.

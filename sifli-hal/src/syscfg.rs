@@ -112,6 +112,17 @@ impl ChipRevision {
         matches!(self, ChipRevision::A4 | ChipRevision::B4)
     }
 
+    /// Get the raw REVID value for this chip revision.
+    #[inline]
+    pub fn revid(&self) -> u8 {
+        match self {
+            ChipRevision::A3OrEarlier(id) => *id,
+            ChipRevision::A4 => 0x07,
+            ChipRevision::B4 => 0x0F,
+            ChipRevision::Invalid(id) => *id,
+        }
+    }
+
     /// Return a human-readable revision name.
     #[inline]
     pub fn name(&self) -> &'static str {
@@ -120,7 +131,7 @@ impl ChipRevision {
             ChipRevision::A3OrEarlier(0x01) => "Pre-A3 (ES v0.1)",
             ChipRevision::A3OrEarlier(0x02) => "Pre-A3 (ES v0.2)",
             ChipRevision::A3OrEarlier(0x03) => "A3",
-            ChipRevision::A3OrEarlier(_) => "A3 or Earlier",
+            ChipRevision::A3OrEarlier(_) => unreachable!(),
             ChipRevision::A4 => "A4 (Letter Series)",
             ChipRevision::B4 => "B4 (Letter Series)",
             ChipRevision::Invalid(_) => "Invalid",
