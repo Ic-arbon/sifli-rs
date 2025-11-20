@@ -9,75 +9,12 @@
 //! patch::install(&idr, &PATCH_LIST_BYTES, &PATCH_BIN_BYTES)?;
 //! ```
 
+use crate::lcpu_ram::PatchRegion;
 use crate::syscfg::Idr;
 
 //=============================================================================
-// Memory layouts
+// Const
 //=============================================================================
-
-/// LCPU patch memory layout for A3 and earlier (HCPU view).
-///
-/// Addresses and sizes match SDK `mem_map.h`; only used internally.
-#[derive(Debug, Clone, Copy)]
-struct A3PatchLayout;
-
-impl A3PatchLayout {
-    /// Patch code start address.
-    ///
-    /// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h:328`
-    const CODE_START: usize = 0x2040_6000;
-
-    /// Patch record area address.
-    ///
-    /// Located at the last 256 bytes of the patch region (0x20406000 + 0x2000 - 0x100 = 0x20407F00).
-    ///
-    /// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h:331` (`LCPU_PATCH_RECORD_ADDR`)
-    const RECORD_ADDR: usize = 0x2040_7F00;
-
-    /// Total patch area size.
-    ///
-    /// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h:300`
-    const TOTAL_SIZE: usize = 8 * 1024;
-}
-
-/// LCPU patch memory layout for Letter Series (A4+/Rev B, HCPU view).
-///
-/// Addresses and sizes match SDK `mem_map.h`; only used internally.
-#[derive(Debug, Clone, Copy)]
-struct LetterPatchLayout;
-
-impl LetterPatchLayout {
-    /// Patch buffer start address.
-    ///
-    /// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h:334`
-    const BUF_START: usize = 0x2040_5000;
-
-    /// Patch code start address (after 12-byte header, 0x20405000 + 12 = 0x2040500C).
-    ///
-    /// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h:335`
-    const CODE_START: usize = 0x2040_500C;
-
-    /// Patch buffer size.
-    ///
-    /// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h:337`
-    #[allow(dead_code)]
-    const BUF_SIZE: usize = 0x3000; // 12KB
-
-    /// Patch code usable size.
-    ///
-    /// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h:338`
-    const CODE_SIZE: usize = 0x2FF4; // 12KB - 12 bytes
-
-    /// Letter Series patch header magic value.
-    ///
-    /// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/lcpu_patch_rev_b.c:60`
-    const MAGIC: u32 = 0x4843_4150; // "PACH" (little-endian)
-
-    /// Fixed entry_count value in header.
-    const ENTRY_COUNT: u32 = 7;
-}
-
-// ===== 通用常量 =====
 
 /// Patch tag magic number.
 ///
@@ -151,10 +88,10 @@ pub fn install(idr: &Idr, list: &[u8], bin: &[u8]) -> Result<(), Error> {
 /// Install A3 / earlier-format patches (internal).
 fn install_a3(list: &[u8], bin: &[u8]) -> Result<(), Error> {
     let code_size = bin.len();
-    if code_size > A3PatchLayout::TOTAL_SIZE {
+    if code_size > PatchRegion::A3_TOTAL_SIZE {
         return Err(Error::CodeTooLarge {
             size_bytes: code_size,
-            max_bytes: A3PatchLayout::TOTAL_SIZE,
+            max_bytes: PatchRegion::A3_TOTAL_SIZE,
         });
     }
 
@@ -166,15 +103,15 @@ fn install_a3(list: &[u8], bin: &[u8]) -> Result<(), Error> {
 
     unsafe {
         // 1. Copy patch record list (entry list).
-        let record_dst = A3PatchLayout::RECORD_ADDR as *mut u8;
+        let record_dst = PatchRegion::A3_RECORD_ADDR as *mut u8;
         core::ptr::copy_nonoverlapping(list.as_ptr(), record_dst, list.len());
 
         // 2. Clear patch code area (bytes).
-        let code_dst = A3PatchLayout::CODE_START as *mut u8;
-        core::ptr::write_bytes(code_dst, 0, A3PatchLayout::TOTAL_SIZE);
+        let code_dst = PatchRegion::A3_CODE_START as *mut u8;
+        core::ptr::write_bytes(code_dst, 0, PatchRegion::A3_TOTAL_SIZE);
 
         // 3. Copy patch code as raw bytes.
-        let code_dst = A3PatchLayout::CODE_START as *mut u8;
+        let code_dst = PatchRegion::A3_CODE_START as *mut u8;
         core::ptr::copy_nonoverlapping(bin.as_ptr(), code_dst, bin.len());
     }
 
@@ -185,34 +122,31 @@ fn install_a3(list: &[u8], bin: &[u8]) -> Result<(), Error> {
 /// Install Letter-Series patches (internal).
 fn install_letter(_list: &[u8], bin: &[u8]) -> Result<(), Error> {
     let code_size = bin.len();
-    if code_size > LetterPatchLayout::CODE_SIZE {
+    if code_size > PatchRegion::LETTER_CODE_SIZE {
         return Err(Error::CodeTooLarge {
             size_bytes: code_size,
-            max_bytes: LetterPatchLayout::CODE_SIZE,
+            max_bytes: PatchRegion::LETTER_CODE_SIZE,
         });
     }
 
-    debug!(
-        "Installing Letter Series patch: code={} bytes",
-        code_size
-    );
+    debug!("Installing Letter Series patch: code={} bytes", code_size);
 
     unsafe {
         // 1. Write header (12 bytes). Reference: lcpu_patch_rev_b.c:60-66.
         let header = [
-            LetterPatchLayout::MAGIC,                 // magic: "PACH"
-            LetterPatchLayout::ENTRY_COUNT,           // entry_count (fixed)
-            LetterPatchLayout::CODE_START as u32 + 1, // code_addr (Thumb bit)
+            PatchRegion::LETTER_MAGIC,                 // magic: "PACH"
+            PatchRegion::LETTER_ENTRY_COUNT,           // entry_count (fixed)
+            PatchRegion::LETTER_CODE_START as u32 + 1, // code_addr (Thumb bit)
         ];
-        let header_dst = LetterPatchLayout::BUF_START as *mut u32;
+        let header_dst = PatchRegion::LETTER_BUF_START as *mut u32;
         core::ptr::copy_nonoverlapping(header.as_ptr(), header_dst, 3);
 
         // 2. Clear patch code area.
-        let code_dst = LetterPatchLayout::CODE_START as *mut u8;
-        core::ptr::write_bytes(code_dst, 0, LetterPatchLayout::CODE_SIZE);
+        let code_dst = PatchRegion::LETTER_CODE_START as *mut u8;
+        core::ptr::write_bytes(code_dst, 0, PatchRegion::LETTER_CODE_SIZE);
 
         // 3. Copy patch code as raw bytes.
-        let code_dst = LetterPatchLayout::CODE_START as *mut u8;
+        let code_dst = PatchRegion::LETTER_CODE_START as *mut u8;
         core::ptr::copy_nonoverlapping(bin.as_ptr(), code_dst, bin.len());
     }
 
