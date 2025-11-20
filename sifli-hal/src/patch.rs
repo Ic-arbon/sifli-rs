@@ -9,7 +9,7 @@
 //! patch::install(&idr, &PATCH_LIST_BYTES, &PATCH_BIN_BYTES)?;
 //! ```
 
-use crate::lcpu_ram::PatchRegion;
+use crate::lcpu::ram::PatchRegion;
 use crate::syscfg::Idr;
 
 //=============================================================================
