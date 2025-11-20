@@ -2,11 +2,10 @@ use critical_section::CriticalSection;
 
 mod clock;
 pub use clock::*;
-
-mod clock_configure;
-pub use clock_configure::*;
+pub mod mux;
 
 use crate::time::Hertz;
+
 
 // TODO: should we split this into `RccEnable` and `RccReset` ?
 pub(crate) trait SealedRccEnableReset {
@@ -94,4 +93,10 @@ pub fn disable_with_cs<T: RccEnableReset>(_cs: CriticalSection) {
 // TODO: should this be `unsafe`?
 pub fn disable<T: RccEnableReset>() {
     critical_section::with(|cs| disable_with_cs::<T>(cs));
+}
+
+
+pub fn test_print_clocks() {
+    let clocks = clocks();
+    info!("Clock frequencies: {:#?}", clocks);
 }
