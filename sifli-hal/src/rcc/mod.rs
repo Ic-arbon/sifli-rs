@@ -94,3 +94,9 @@ pub fn disable_with_cs<T: RccEnableReset>(_cs: CriticalSection) {
 pub fn disable<T: RccEnableReset>() {
     critical_section::with(|cs| disable_with_cs::<T>(cs));
 }
+
+
+pub fn test_print_clocks() {
+    let clocks = clocks();
+    info!("Clock frequencies: {:#?}", clocks);
+}
