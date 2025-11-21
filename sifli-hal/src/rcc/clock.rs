@@ -412,6 +412,7 @@ impl Config {
 
 /// Clocks configuration
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Clocks {
     // HPSYS
     pub sysclk: MaybeHertz,
