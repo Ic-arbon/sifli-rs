@@ -10,7 +10,7 @@
 //! ```
 
 use crate::lcpu::ram::PatchRegion;
-use crate::syscfg::Idr;
+use crate::syscfg::ChipRevision;
 
 //=============================================================================
 // Const
@@ -61,9 +61,9 @@ pub enum Error {
 /// use sifli_hal::{patch, syscfg};
 ///
 /// let idr = syscfg::read_idr();
-/// patch::install(&idr, &PATCH_LIST_BYTES, &PATCH_BIN_BYTES)?;
+/// patch::install(idr.revision(), &PATCH_LIST_BYTES, &PATCH_BIN_BYTES)?;
 /// ```
-pub fn install(idr: &Idr, list: &[u8], bin: &[u8]) -> Result<(), Error> {
+pub fn install(revision: ChipRevision, list: &[u8], bin: &[u8]) -> Result<(), Error> {
     // Parameter validation.
     if list.is_empty() {
         return Err(Error::EmptyRecord);
@@ -72,9 +72,10 @@ pub fn install(idr: &Idr, list: &[u8], bin: &[u8]) -> Result<(), Error> {
         return Err(Error::EmptyCode);
     }
 
-    let revision = idr.revision();
     if !revision.is_valid() {
-        return Err(Error::InvalidRevision { revid: idr.revid });
+        return Err(Error::InvalidRevision {
+            revid: revision.revid(),
+        });
     }
 
     // Dispatch to A3 or Letter-Series patch installer based on revision.
