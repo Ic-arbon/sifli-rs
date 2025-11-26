@@ -14,6 +14,7 @@ mod utils;
 
 pub mod rcc;
 pub mod gpio;
+pub mod i2c;
 pub mod timer;
 pub mod time;
 pub mod pmu;
