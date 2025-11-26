@@ -11,18 +11,32 @@ use crate::time::Hertz;
 use crate::dma::ChannelAndRequest;
 
 /// Timer pin trait
-pub trait TimerPin<T: GptimInstance, C: TimerChannel>: GpioPin {
-    /// Get the AF function select value
-    fn af_num(&self) -> u8;
+pub trait TimerPin<T, C>: GpioPin 
+where
+    T: super::Instance,  // Accept any Timer instance (ATIM, GPTIM, BTIM)
+{
+    /// Get the FSEL value for this pin as timer function
+    fn fsel(&self) -> u8;
+    
+    /// Configure HPSYS_CFG pin routing if needed
+    fn set_cfg_pin(&self) {}
 }
 
 /// PWM pin wrapper
-pub struct PwmPin<'d, T: GptimInstance, C: TimerChannel> {
+pub struct PwmPin<'d, T, C> 
+where
+    T: super::GptimInstance,  // Only GPTIM supports SimplePwm for now
+    C: TimerChannel,
+{
     _pin: PeripheralRef<'d, AnyPin>,
     _phantom: PhantomData<(T, C)>,
 }
 
-impl<'d, T: GptimInstance, C: TimerChannel> PwmPin<'d, T, C> {
+impl<'d, T, C> PwmPin<'d, T, C>
+where
+    T: super::GptimInstance,
+    C: TimerChannel,
+{
     /// Create a new PWM pin
     /// 
     /// This will automatically configure:
@@ -33,26 +47,29 @@ impl<'d, T: GptimInstance, C: TimerChannel> PwmPin<'d, T, C> {
         into_ref!(pin);
         
         let pin_num = pin.pin();
-        let af_num = pin.af_num();
+        let fsel_val = pin.fsel();
         
         critical_section::with(|_| {
             // 1. 配置 GPIO FSEL (AF 功能选择)
             if pin_num <= 38 {
                 crate::pac::HPSYS_PINMUX.pad_pa0_38(pin_num as usize).modify(|w| {
-                    w.set_fsel(af_num);
+                    w.set_fsel(fsel_val);
                     w.set_pe(false);  // No pull
                 });
             } else if pin_num <= 42 {
                 crate::pac::HPSYS_PINMUX.pad_pa39_42((pin_num - 39) as usize).modify(|w| {
-                    w.set_fsel(af_num);
+                    w.set_fsel(fsel_val);
                     w.set_pe(false);
                 });
             } else if pin_num <= 44 {
                 crate::pac::HPSYS_PINMUX.pad_pa43_44((pin_num - 43) as usize).modify(|w| {
-                    w.set_fsel(af_num);
+                    w.set_fsel(fsel_val);
                     w.set_pe(false);
                 });
             }
+            
+            // 1b. 配置 HPSYS_CFG PINR (某些外设需要)
+            pin.set_cfg_pin();
             
             // 2. 启用 GPIO 输出
             // PA0-PA31 在 Bank 0, PA32-PA44 在 Bank 1
@@ -67,7 +84,7 @@ impl<'d, T: GptimInstance, C: TimerChannel> PwmPin<'d, T, C> {
             }
             
             // 3. 配置 Timer PINR (Pin Routing) - SiFli 特有！
-            configure_timer_pinr::<T, C>(pin_num);
+            // 由 pin.set_cfg_pin() 完成
         });
         
         Self {
@@ -77,32 +94,6 @@ impl<'d, T: GptimInstance, C: TimerChannel> PwmPin<'d, T, C> {
     }
 }
 
-/// Configure Timer Pin Routing (HPSYS_CFG.GPTIMx_PINR)
-fn configure_timer_pinr<T: GptimInstance, C: TimerChannel>(pin_num: u8) {
-    use crate::peripherals;
-    
-    // 根据 Timer 类型和 Channel 配置对应的 PINR
-    // GPTIM1
-    if core::any::TypeId::of::<T>() == core::any::TypeId::of::<peripherals::GPTIM1>() {
-        match C::CHANNEL {
-            Channel::Ch1 => crate::pac::HPSYS_CFG.gptim1_pinr().modify(|w| w.set_ch1_pin(pin_num)),
-            Channel::Ch2 => crate::pac::HPSYS_CFG.gptim1_pinr().modify(|w| w.set_ch2_pin(pin_num)),
-            Channel::Ch3 => crate::pac::HPSYS_CFG.gptim1_pinr().modify(|w| w.set_ch3_pin(pin_num)),
-            Channel::Ch4 => crate::pac::HPSYS_CFG.gptim1_pinr().modify(|w| w.set_ch4_pin(pin_num)),
-            _ => {}
-        }
-    }
-    // GPTIM2
-    else if core::any::TypeId::of::<T>() == core::any::TypeId::of::<peripherals::GPTIM2>() {
-        match C::CHANNEL {
-            Channel::Ch1 => crate::pac::HPSYS_CFG.gptim2_pinr().modify(|w| w.set_ch1_pin(pin_num)),
-            Channel::Ch2 => crate::pac::HPSYS_CFG.gptim2_pinr().modify(|w| w.set_ch2_pin(pin_num)),
-            Channel::Ch3 => crate::pac::HPSYS_CFG.gptim2_pinr().modify(|w| w.set_ch3_pin(pin_num)),
-            Channel::Ch4 => crate::pac::HPSYS_CFG.gptim2_pinr().modify(|w| w.set_ch4_pin(pin_num)),
-            _ => {}
-        }
-    }
-}
 
 /// Simple PWM driver
 pub struct SimplePwm<'d, T: GptimInstance> {
