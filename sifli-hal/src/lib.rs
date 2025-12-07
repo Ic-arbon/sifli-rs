@@ -18,8 +18,10 @@ pub mod i2c;
 pub mod timer;
 pub mod time;
 pub mod pmu;
-pub mod lpsys_rcc;
-pub mod patch;
+// TODO: re-enable after ConfigOption is restored
+// pub mod lpsys_rcc;
+// TODO: re-enable after ConfigOption is restored
+// pub mod patch;
 pub mod syscfg;
 #[allow(clippy::all)] // modified from embassy-stm32
 pub mod usart;
@@ -31,8 +33,10 @@ pub mod mailbox;
 #[cfg(feature = "usb")]
 pub mod usb;
 pub mod efuse;
-pub mod lcpu;
-pub mod lpaon;
+// TODO: re-enable after ConfigOption is restored
+// pub mod lcpu;
+// TODO: re-enable after ConfigOption is restored
+// pub mod lpaon;
 pub mod hpaon;
 #[cfg(feature = "_time-driver")]
 pub mod time_driver;
