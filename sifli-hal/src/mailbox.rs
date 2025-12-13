@@ -72,16 +72,17 @@ mod sealed {
     pub trait SealedMailboxInstance {}
 }
 
-/// PAC Mailbox register block type alias
-type Regs = crate::pac::mailbox::Mailbox;
+/// Unified mailbox register block type (uses MAILBOX1 layout as common type)
+type Regs = crate::pac::mailbox::Mailbox1;
 
 /// Trait for mailbox peripheral instances
 ///
 /// This trait is sealed and cannot be implemented outside this module.
-/// It provides a unified interface to access MAILBOX1 and MAILBOX2 registers.
+/// It provides a unified interface to access MAILBOX1 and MAILBOX2 registers
+/// via unsafe pointer conversion (embassy-stm32 style).
 #[allow(private_bounds)]
 pub trait MailboxInstance: sealed::SealedMailboxInstance + 'static {
-    /// Get the PAC register block for this mailbox instance
+    /// Get the unified register block via unsafe pointer conversion
     fn regs() -> Regs;
 }
 
@@ -89,7 +90,7 @@ impl sealed::SealedMailboxInstance for peripherals::MAILBOX1 {}
 impl MailboxInstance for peripherals::MAILBOX1 {
     #[inline]
     fn regs() -> Regs {
-        crate::pac::MAILBOX1
+        unsafe { Regs::from_ptr(crate::pac::MAILBOX1.as_ptr()) }
     }
 }
 
@@ -97,7 +98,7 @@ impl sealed::SealedMailboxInstance for peripherals::MAILBOX2 {}
 impl MailboxInstance for peripherals::MAILBOX2 {
     #[inline]
     fn regs() -> Regs {
-        crate::pac::MAILBOX2
+        unsafe { Regs::from_ptr(crate::pac::MAILBOX2.as_ptr()) }
     }
 }
 
