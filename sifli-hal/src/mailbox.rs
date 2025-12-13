@@ -6,7 +6,7 @@
 //!
 //! Physical MAILBOX peripherals on chip:
 //! - **MAILBOX1** @ 0x50082000 (HPSYS address space) - 4 channels
-//! - **MAILBOX2** @ 0x40042000 (LPSYS address space) - 2 channels
+//! - **MAILBOX2** @ 0x40002000 (LPSYS address space) - 2 channels
 //!
 //! Each CPU uses one for TX, listens to the other's IRQ for RX:
 //!
@@ -67,100 +67,37 @@ use crate::peripherals;
 /// Re-export LockCore enum from PAC
 pub use crate::pac::mailbox::vals::LockCore;
 
-pub trait LockCoreExt {
-    fn is_locked(&self) -> bool;
-}
-
-/// Extension methods for LockCore
-impl LockCoreExt for LockCore {
-    /// Check if locked
-    #[inline]
-    fn is_locked(&self) -> bool {
-        !matches!(self, LockCore::Unlocked)
-    }
-}
-
 /// Sealed trait to constrain mailbox peripheral types
 mod sealed {
     pub trait SealedMailboxInstance {}
 }
 
-// Type aliases for register types
-type IxrReg = crate::pac::common::Reg<crate::pac::mailbox::regs::Ixr, crate::pac::common::RW>;
-type ExrReg = crate::pac::common::Reg<crate::pac::mailbox::regs::Exr, crate::pac::common::RW>;
+/// PAC Mailbox register block type alias
+type Regs = crate::pac::mailbox::Mailbox;
 
 /// Trait for mailbox peripheral instances
 ///
 /// This trait is sealed and cannot be implemented outside this module.
 /// It provides a unified interface to access MAILBOX1 and MAILBOX2 registers.
+#[allow(private_bounds)]
 pub trait MailboxInstance: sealed::SealedMailboxInstance + 'static {
-    /// Get IER register
-    fn ier(ch: usize) -> IxrReg;
-    /// Get ITR register
-    fn itr(ch: usize) -> IxrReg;
-    /// Get ICR register
-    fn icr(ch: usize) -> IxrReg;
-    /// Get ISR register
-    fn isr(ch: usize) -> IxrReg;
-    /// Get MISR register
-    fn misr(ch: usize) -> IxrReg;
-    /// Get EXR register
-    fn exr(ch: usize) -> ExrReg;
+    /// Get the PAC register block for this mailbox instance
+    fn regs() -> Regs;
 }
 
 impl sealed::SealedMailboxInstance for peripherals::MAILBOX1 {}
 impl MailboxInstance for peripherals::MAILBOX1 {
     #[inline]
-    fn ier(ch: usize) -> IxrReg {
-        crate::pac::MAILBOX1.ier(ch)
-    }
-    #[inline]
-    fn itr(ch: usize) -> IxrReg {
-        crate::pac::MAILBOX1.itr(ch)
-    }
-    #[inline]
-    fn icr(ch: usize) -> IxrReg {
-        crate::pac::MAILBOX1.icr(ch)
-    }
-    #[inline]
-    fn isr(ch: usize) -> IxrReg {
-        crate::pac::MAILBOX1.isr(ch)
-    }
-    #[inline]
-    fn misr(ch: usize) -> IxrReg {
-        crate::pac::MAILBOX1.misr(ch)
-    }
-    #[inline]
-    fn exr(ch: usize) -> ExrReg {
-        crate::pac::MAILBOX1.exr(ch)
+    fn regs() -> Regs {
+        crate::pac::MAILBOX1
     }
 }
 
 impl sealed::SealedMailboxInstance for peripherals::MAILBOX2 {}
 impl MailboxInstance for peripherals::MAILBOX2 {
     #[inline]
-    fn ier(ch: usize) -> IxrReg {
-        crate::pac::MAILBOX2.ier(ch)
-    }
-    #[inline]
-    fn itr(ch: usize) -> IxrReg {
-        crate::pac::MAILBOX2.itr(ch)
-    }
-    #[inline]
-    fn icr(ch: usize) -> IxrReg {
-        crate::pac::MAILBOX2.icr(ch)
-    }
-    #[inline]
-    fn isr(ch: usize) -> IxrReg {
-        crate::pac::MAILBOX2.isr(ch)
-    }
-    #[inline]
-    fn misr(ch: usize) -> IxrReg {
-        crate::pac::MAILBOX2.misr(ch)
-    }
-    #[inline]
-    fn exr(ch: usize) -> ExrReg {
-        crate::pac::MAILBOX2.exr(ch)
+    fn regs() -> Regs {
+        crate::pac::MAILBOX2
     }
 }
 
@@ -182,6 +119,67 @@ impl<'d, T: MailboxInstance, const CH: usize> MailboxChannel<'d, T, CH> {
         }
     }
 
+    /// Enable interrupt reception (unmask)
+    ///
+    /// Allows receiving interrupts from remote core for this bit.
+    /// Must be called on the **receiving side** before remote can send interrupts.
+    ///
+    /// # Arguments
+    /// - `bit`: Interrupt bit 0-15
+    #[inline]
+    pub fn enable_interrupt(&mut self, bit: u8) {
+        assert!(bit < 16, "bit must be 0-15");
+        T::regs().ier(CH).modify(|w| w.set_int(bit as usize, true));
+    }
+
+    /// Disable interrupt reception (mask)
+    ///
+    /// Prevents receiving interrupts from remote core for this bit.
+    ///
+    /// # Arguments
+    /// - `bit`: Interrupt bit 0-15
+    #[inline]
+    pub fn disable_interrupt(&mut self, bit: u8) {
+        assert!(bit < 16, "bit must be 0-15");
+        T::regs().ier(CH).modify(|w| w.set_int(bit as usize, false));
+    }
+
+    /// Enable interrupt reception for multiple bits at once
+    ///
+    /// Unmasks all interrupt bits specified in the mask.
+    ///
+    /// # Arguments
+    /// - `mask`: Bitmask of interrupts to enable (bits 0-15)
+    ///
+    /// # Example
+    /// ```no_run
+    /// # let mut mb = todo!();
+    /// // Enable interrupts for bits 0, 1, and 2
+    /// mb.ch1.enable_interrupt_mask(0b0111);
+    /// ```
+    #[inline]
+    pub fn enable_interrupt_mask(&mut self, mask: u16) {
+        T::regs().ier(CH).modify(|w| w.0 |= mask as u32);
+    }
+
+    /// Disable interrupt reception for multiple bits at once
+    ///
+    /// Masks all interrupt bits specified in the mask.
+    ///
+    /// # Arguments
+    /// - `mask`: Bitmask of interrupts to disable (bits 0-15)
+    ///
+    /// # Example
+    /// ```no_run
+    /// # let mut mb = todo!();
+    /// // Disable interrupts for bits 0, 1, and 2
+    /// mb.ch1.disable_interrupt_mask(0b0111);
+    /// ```
+    #[inline]
+    pub fn disable_interrupt_mask(&mut self, mask: u16) {
+        T::regs().ier(CH).modify(|w| w.0 &= !(mask as u32));
+    }
+
     /// Trigger interrupt on remote core
     ///
     /// # Arguments
@@ -189,7 +187,7 @@ impl<'d, T: MailboxInstance, const CH: usize> MailboxChannel<'d, T, CH> {
     #[inline]
     pub fn trigger(&mut self, bit: u8) {
         assert!(bit < 16, "bit must be 0-15");
-        T::itr(CH).write(|w| w.set_int(bit as usize, true));
+        T::regs().itr(CH).write(|w| w.set_int(bit as usize, true));
     }
 
     /// Trigger multiple bits at once
@@ -205,32 +203,114 @@ impl<'d, T: MailboxInstance, const CH: usize> MailboxChannel<'d, T, CH> {
     /// ```
     #[inline]
     pub fn trigger_mask(&mut self, mask: u16) {
-        T::itr(CH).write(|w| w.0 = mask as u32);
+        T::regs().itr(CH).write(|w| w.0 = mask as u32);
     }
 
-    /// Enable interrupt reception (unmask)
+    /// Clear interrupt flag
     ///
-    /// Allows receiving interrupts from remote core for this bit.
-    /// Must be called on the **receiving side** before remote can send interrupts.
+    /// Clears the specified interrupt bit in the ISR register.
+    /// This should be called in the interrupt handler after processing the interrupt.
     ///
     /// # Arguments
-    /// - `bit`: Interrupt bit 0-15
+    /// - `bit`: Interrupt bit 0-15 to clear
+    ///
+    /// # Example
+    /// ```no_run
+    /// # let mut mb = todo!();
+    /// // In interrupt handler
+    /// if mb.ch1.check_interrupt(5) {
+    ///     // Process interrupt bit 5
+    ///     // ...
+    ///     // Clear the flag
+    ///     mb.ch1.clear_interrupt(5);
+    /// }
+    /// ```
     #[inline]
-    pub fn enable_interrupt(&mut self, bit: u8) {
+    pub fn clear_interrupt(&mut self, bit: u8) {
         assert!(bit < 16, "bit must be 0-15");
-        T::ier(CH).modify(|w| w.set_int(bit as usize, true));
+        T::regs().icr(CH).write(|w| w.set_int(bit as usize, true));
     }
 
-    /// Disable interrupt reception (mask)
+    /// Clear multiple interrupt flags at once
     ///
-    /// Prevents receiving interrupts from remote core for this bit.
+    /// Clears all interrupt bits specified in the mask.
     ///
     /// # Arguments
-    /// - `bit`: Interrupt bit 0-15
+    /// - `mask`: Bitmask of interrupts to clear (bits 0-15)
+    ///
+    /// # Example
+    /// ```no_run
+    /// # let mut mb = todo!();
+    /// // Clear bits 0, 3, and 7
+    /// mb.ch1.clear_interrupt_mask(0b1000_1001);
+    /// ```
     #[inline]
-    pub fn disable_interrupt(&mut self, bit: u8) {
+    pub fn clear_interrupt_mask(&mut self, mask: u16) {
+        T::regs().icr(CH).write(|w| w.0 = mask as u32);
+    }
+
+    /// Check if specific interrupt bit is triggered
+    ///
+    /// This is a convenience method that checks a single bit in the ISR register.
+    /// Equivalent to `(read_interrupt_status() & (1 << bit)) != 0`.
+    ///
+    /// # Arguments
+    /// - `bit`: Interrupt bit 0-15 to check
+    ///
+    /// # Returns
+    /// `true` if the interrupt bit is set, `false` otherwise
+    ///
+    /// # Example
+    /// ```no_run
+    /// # let mb = todo!();
+    /// if mb.ch1.check_interrupt(3) {
+    ///     // Interrupt bit 3 is triggered
+    /// }
+    /// ```
+    #[inline]
+    pub fn check_interrupt(&self, bit: u8) -> bool {
         assert!(bit < 16, "bit must be 0-15");
-        T::ier(CH).modify(|w| w.set_int(bit as usize, false));
+        T::regs().isr(CH).read().int(bit as usize)
+    }
+
+    /// Read raw interrupt status register (ISR)
+    ///
+    /// Returns the current state of all interrupt bits (0-15) regardless of masking.
+    /// Each set bit indicates that the corresponding interrupt was triggered.
+    ///
+    /// # Returns
+    /// Bitmask of triggered interrupts (bit 0-15)
+    ///
+    /// # Example
+    /// ```no_run
+    /// # let mb = todo!();
+    /// let status = mb.ch1.read_interrupt_status();
+    /// if status & 0x01 != 0 {
+    ///     // Interrupt bit 0 is triggered
+    /// }
+    /// ```
+    #[inline]
+    pub fn read_interrupt_status(&self) -> u16 {
+        T::regs().isr(CH).read().0 as u16
+    }
+
+    /// Read masked interrupt status register (MISR)
+    ///
+    /// Returns only the interrupts that are both triggered AND enabled.
+    /// This is equivalent to `ISR & IER`.
+    ///
+    /// # Returns
+    /// Bitmask of enabled and triggered interrupts (bit 0-15)
+    ///
+    /// # Example
+    /// ```no_run
+    /// # let mb = todo!();
+    /// // Only shows interrupts that are both triggered and unmasked
+    /// let masked_status = mb.ch1.read_masked_interrupt_status();
+    /// ```
+    #[inline]
+    pub fn read_masked_interrupt_status(&self) -> u16 {
+        T::regs().misr(CH).read().0 as u16
     }
 
     /// Try to acquire mutex lock
@@ -260,7 +340,7 @@ impl<'d, T: MailboxInstance, const CH: usize> MailboxChannel<'d, T, CH> {
     /// ```
     #[inline]
     pub fn try_lock(&mut self) -> LockCore {
-        let exr = T::exr(CH).read();
+        let exr = T::regs().exr(CH).read();
 
         if exr.ex() {
             LockCore::Unlocked
@@ -275,7 +355,7 @@ impl<'d, T: MailboxInstance, const CH: usize> MailboxChannel<'d, T, CH> {
     /// Caller must own the lock (i.e., `try_lock()` returned `Unlocked`)
     #[inline]
     pub unsafe fn unlock(&mut self) {
-        T::exr(CH).write(|w| w.set_ex(true));
+        T::regs().exr(CH).write(|w| w.set_ex(true));
     }
 }
 
