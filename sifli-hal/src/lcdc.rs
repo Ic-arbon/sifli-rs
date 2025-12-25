@@ -1,4 +1,5 @@
 use crate::rcc::enable_and_reset;
+use crate::to_system_bus_addr;
 use crate::{interrupt, peripherals, time::Hertz, utils::blocking_wait_timeout_ms, Peripheral};
 use embassy_hal_internal::into_ref;
 use embassy_time::{Duration, Instant, Timer};
@@ -478,7 +479,7 @@ impl<'d, T: Instance> Lcdc<'d, T> {
 
         // Set Source Address
         // Note: Buffer alignment requirements (usually 2 bytes for RGB565) are assumed to be met.
-        let addr = buffer.as_ptr() as u32;
+        let addr = to_system_bus_addr(buffer.as_ptr() as usize) as u32;
         regs.layer0_src().write(|w| w.set_addr(addr));
 
         // Start Transfer
