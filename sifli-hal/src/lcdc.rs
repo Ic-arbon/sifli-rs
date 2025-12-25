@@ -1,13 +1,161 @@
-use crate::{Peripheral, interrupt, peripherals, time::Hertz};
+use crate::rcc::enable_and_reset;
+use crate::{interrupt, peripherals, time::Hertz, utils::blocking_wait_timeout_ms, Peripheral};
+use embassy_hal_internal::into_ref;
 use embassy_time::{Duration, Instant, Timer};
 
 use crate::pac::lcdc::vals;
 
-pub use vals::{SpiLineMode, SpiClkPol, SpiClkInit, LcdFormat, LayerFormat, TargetLcd,
-    LcdIntfSel, SpiLcdFormat, SpiRdMode, SpiAccessLen, SingleAccessType, Polarity, AlphaSel};
+pub use vals::{
+    AlphaSel, LayerFormat, LcdFormat, LcdIntfSel, Polarity, SingleAccessType, SpiAccessLen,
+    SpiClkInit, SpiClkPol, SpiLcdFormat, SpiLineMode, SpiRdMode, TargetLcd,
+};
+
+pub use vals::LcdIntfSel as LcdInterface;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InterfaceType {
+    Spi,
+    // MCU 8080
+    Dbi,
+    // MIPI
+    Dsi,
+    // RGB
+    Dpi,
+    // JDI
+    Jdi,
+}
+
+pub const INTERFACE_COLOR_FORMATS: &[(InterfaceType, &[OutputColorFormat])] = &[
+    (
+        InterfaceType::Spi,
+        &[
+            OutputColorFormat::Rgb332,
+            OutputColorFormat::Rgb565,
+            // OutputColorFormat::Rgb565Swap,
+            OutputColorFormat::Rgb888,
+        ],
+    ),
+    (
+        InterfaceType::Dbi,
+        &[
+            OutputColorFormat::Rgb332,
+            OutputColorFormat::Rgb565,
+            // OutputColorFormat::Rgb565Swap,
+            OutputColorFormat::Rgb888,
+        ],
+    ),
+];
+
+impl InterfaceType {
+    pub fn from_lcd_interface(intf: LcdIntfSel) -> Self {
+        match intf {
+            LcdIntfSel::Spi => InterfaceType::Spi,
+            LcdIntfSel::DbiTypeB => InterfaceType::Dbi,
+            LcdIntfSel::DbiToDsi => InterfaceType::Dsi,
+            LcdIntfSel::Dpi => InterfaceType::Dpi,
+            LcdIntfSel::JdiSerial => InterfaceType::Jdi,
+            LcdIntfSel::JdiParallel => InterfaceType::Jdi,
+            LcdIntfSel::DbiTypeA => InterfaceType::Dbi,
+            LcdIntfSel::DpiToDsi => InterfaceType::Dsi,
+        }
+    }
+
+    pub fn supports_output_format(&self, format: &OutputColorFormat) -> bool {
+        INTERFACE_COLOR_FORMATS
+            .iter()
+            .find(|(intf, _)| intf == self)
+            .is_some_and(|(_, formats)| formats.contains(format))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputColorFormat {
+    Rgb332,
+    Rgb565,
+    // Rgb565Swap,
+    Rgb888,
+    Argb8565,
+    Argb8888,
+    /// Luminance 8-bit
+    A8,
+    /// Alpha 8-bit
+    #[cfg(not(feature = "sf32lb52x"))]
+    L8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputColorFormat {
+    Rgb332,
+    Rgb565,
+    // Rgb565Swap,
+    /// DSI Only
+    Rgb666,
+    Rgb888,
+}
+
+impl InputColorFormat {
+    pub fn to_layer_format(&self) -> LayerFormat {
+        match self {
+            InputColorFormat::Rgb332 => LayerFormat::RGB332,
+            InputColorFormat::Rgb565 => LayerFormat::RGB565,
+            // InputColorFormat::Rgb565Swap => LayerFormat::RGB565,
+            InputColorFormat::Rgb888 => LayerFormat::RGB888,
+            InputColorFormat::Argb8565 => LayerFormat::ARGB8565,
+            InputColorFormat::Argb8888 => LayerFormat::ARGB8888,
+            InputColorFormat::A8 => LayerFormat::A8,
+            #[cfg(not(feature = "sf32lb52x"))]
+            InputColorFormat::L8 => LayerFormat::L8,
+        }
+    }
+
+    pub fn bpp(&self) -> u16 {
+        match self {
+            InputColorFormat::Rgb332 => 1,
+            InputColorFormat::Rgb565 => 2,
+            // InputColorFormat::Rgb565Swap => 2,
+            InputColorFormat::Rgb888 => 3,
+            InputColorFormat::Argb8565 => 3,
+            InputColorFormat::Argb8888 => 4,
+            InputColorFormat::A8 => 1,
+            #[cfg(not(feature = "sf32lb52x"))]
+            InputColorFormat::L8 => 1,
+        }
+    }
+}
+
+impl OutputColorFormat {
+    pub fn to_lcd_format(&self, interface: InterfaceType) -> LcdFormat {
+        assert!(interface == InterfaceType::Spi);
+        match self {
+            OutputColorFormat::Rgb332 => LcdFormat::Rgb332,
+            OutputColorFormat::Rgb565 => LcdFormat::Rgb565,
+            // OutputColorFormat::Rgb565Swap => LcdFormat::Rgb565,
+            OutputColorFormat::Rgb888 => LcdFormat::Rgb888,
+            _ => panic!(),
+        }
+    }
+
+    pub fn to_spi_lcd_format(&self) -> SpiLcdFormat {
+        match self {
+            OutputColorFormat::Rgb332 => SpiLcdFormat::Rgb332,
+            OutputColorFormat::Rgb565 => SpiLcdFormat::Rgb565,
+            // OutputColorFormat::Rgb565Swap => SpiLcdFormat::Rgb565,
+            OutputColorFormat::Rgb888 => SpiLcdFormat::Rgb888,
+            _ => panic!(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum FrequencyConfig {
+    /// Use fixed frequency
+    Freq(Hertz),
+    /// Use source clock divided by this value (minimum divider is 2)
+    Div(u8),
+}
 
 /// SPI Configuration for the LCD interface
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct SpiConfig {
     /// SPI line mode (e.g., 4-line, 3-line, etc.)
     pub line_mode: SpiLineMode,
@@ -19,6 +167,10 @@ pub struct SpiConfig {
     pub cs_polarity: Polarity,
     /// VSYNC signal polarity (used for TE)
     pub vsyn_polarity: Polarity,
+    /// SPI write frequency
+    pub write_frequency: FrequencyConfig,
+    /// SPI read frequency
+    pub read_frequency: FrequencyConfig,
 }
 
 impl Default for SpiConfig {
@@ -29,6 +181,8 @@ impl Default for SpiConfig {
             clk_phase: SpiClkInit::Low,
             cs_polarity: Polarity::ActiveLow,
             vsyn_polarity: Polarity::ActiveLow,
+            write_frequency: FrequencyConfig::Freq(Hertz::mhz(10)), // 10 MHz
+            read_frequency: FrequencyConfig::Freq(Hertz::mhz(2)),   // 2 MHz
         }
     }
 }
@@ -37,11 +191,13 @@ impl Default for SpiConfig {
 #[derive(Debug, Clone)]
 pub struct Config {
     /// Output pixel format (target format sent to the display)
-    pub pixel_format: LcdFormat,
+    pub out_color_format: OutputColorFormat,
     /// Input layer format (format of the framebuffer in memory)
-    pub layer_format: LayerFormat,
-    /// Desired output SPI clock frequency in Hz
-    pub frequency: Hertz,
+    pub in_color_format: InputColorFormat,
+    /// TODO: Display interface selection (SPI/DBI/DSI)
+    pub display_interface: LcdIntfSel,
+    /// LCD reset interval in microseconds
+    pub reset_lcd_interval_us: u32,
     /// SPI specific settings
     pub spi: SpiConfig,
 }
@@ -49,9 +205,10 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            pixel_format: LcdFormat::Rgb565,
-            layer_format: LayerFormat::RGB565,
-            frequency: Hertz::mhz(30), // 30 MHz
+            out_color_format: OutputColorFormat::Rgb565,
+            in_color_format: InputColorFormat::Rgb565,
+            display_interface: LcdIntfSel::Spi,
+            reset_lcd_interval_us: 20,
             spi: SpiConfig::default(),
         }
     }
@@ -60,65 +217,101 @@ impl Default for Config {
 /// LCDC Driver implementation for SF32LB52x
 pub struct Lcdc<'d, T: Instance> {
     _peri: crate::PeripheralRef<'d, T>,
+    config: Config,
 }
 
 impl<'d, T: Instance> Lcdc<'d, T> {
     /// Create a new LCDC driver instance
-    pub fn new(peri: impl Peripheral<P = T> + 'd) -> Self {
-        crate::into_ref!(peri);
-        Self { _peri: peri }
+    pub fn new(peri: impl Peripheral<P = T> + 'd, config: Config) -> Self {
+        into_ref!(peri);
+
+        assert!(
+            config.display_interface == LcdIntfSel::Spi,
+            "Only SPI interface is supported now"
+        );
+        assert!(
+            InterfaceType::from_lcd_interface(config.display_interface)
+                .supports_output_format(&config.out_color_format),
+            "Unsupported output format for SPI interface"
+        );
+
+        Self {
+            _peri: peri,
+            config,
+        }
     }
 
-    /// Initialize the LCDC peripheral
-    pub fn init(&mut self, config: &Config) {
-        let regs = T::regs();
-
-        // Soft reset the LCDC controller
-        regs.command().modify(|w| w.set_reset(true));
-        // Wait a short delay for reset to apply (implementation detail)
-        // In a real scenario, a small spin-wait might be needed here.
-        regs.command().modify(|w| w.set_reset(false));
-
+    pub fn set_spi_frequency(&mut self, freq: FrequencyConfig) {
         // Calculate clock divider
         // Formula: clk_div = (src_clk + freq - 1) / freq
         // Hardware requirement: divider >= 2
-        let clk_div = if config.frequency.0 > 0 {
-            T::get_freq().unwrap().0.div_ceil(config.frequency.0)
-        } else {
-            2
-        };
-        let clk_div = core::cmp::max(clk_div, 2) as u8;
+        let regs = T::regs();
+        let clk_div = match freq {
+            FrequencyConfig::Freq(hz) => {
+                if hz.0 > 0 {
+                    T::get_freq().unwrap().0.div_ceil(hz.0)
+                } else {
+                    2
+                }
+            }
+            FrequencyConfig::Div(div) => div as u32,
+        }
+        .max(2) as u8;
+        regs.spi_if_conf().modify(|w| w.set_clk_div(clk_div));
+    }
+
+    /// Reset the LCD via the dedicated reset pin (hardware reset).
+    /// This matches C code `HAL_LCDC_ResetLCD` which toggles `LCD_RSTB` pin.
+    pub async fn reset_lcd(&mut self) {
+        let regs = T::regs();
+
+        // Assert reset (Active Low)
+        regs.lcd_if_conf().modify(|w| w.set_lcd_rstb(false));
+        Timer::after(Duration::from_micros(
+            self.config.reset_lcd_interval_us as u64,
+        ))
+        .await;
+        // Release reset
+        regs.lcd_if_conf().modify(|w| w.set_lcd_rstb(true));
+    }
+
+    /// Initialize the LCDC peripheral
+    pub fn init(&mut self) {
+        let regs = T::regs();
+        enable_and_reset::<T>();
+
+        regs.setting().modify(|w| w.set_auto_gate_en(true));
+
+        let lcd_format =
+            self.config
+                .out_color_format
+                .to_lcd_format(InterfaceType::from_lcd_interface(
+                    self.config.display_interface,
+                ));
+
+        let spi_lcd_format = self.config.out_color_format.to_spi_lcd_format();
 
         // Configure LCD Interface (LCD_CONF)
         regs.lcd_conf().modify(|w| {
             w.set_lcd_intf_sel(LcdIntfSel::Spi);
             w.set_target_lcd(TargetLcd::LcdPanel0);
-            w.set_lcd_format(config.pixel_format);
+            w.set_lcd_format(lcd_format);
 
-            // Map pixel format to SPI specific format bits
-            let spi_fmt = match config.pixel_format {
-                LcdFormat::Rgb332 => SpiLcdFormat::Rgb332,
-                LcdFormat::Rgb565 => SpiLcdFormat::Rgb565,
-                LcdFormat::Rgb888 => SpiLcdFormat::Rgb888,
-                _ => SpiLcdFormat::Rgb565,
-            };
-            w.set_spi_lcd_format(spi_fmt);
+            w.set_spi_lcd_format(spi_lcd_format);
         });
 
         // Configure SPI Interface (SPI_IF_CONF)
         regs.spi_if_conf().modify(|w| {
-            w.set_line(config.spi.line_mode);
-            w.set_clk_div(clk_div);
-            w.set_spi_cs_pol(config.spi.cs_polarity);
-            w.set_spi_clk_pol(config.spi.clk_polarity);
-            w.set_spi_clk_init(config.spi.clk_phase);
-
-            // Set standard SPI behaviors
+            w.set_line(self.config.spi.line_mode);
+            w.set_spi_cs_pol(self.config.spi.cs_polarity);
+            w.set_spi_clk_pol(self.config.spi.clk_polarity);
+            w.set_spi_clk_init(self.config.spi.clk_phase);
             w.set_spi_cs_auto_dis(true); // Disable CS after transaction
             w.set_spi_clk_auto_dis(true); // Disable CLK when idle
             w.set_spi_cs_no_idle(true); // Keep CS active during transaction
             w.set_dummy_cycle(0);
         });
+        self.set_spi_frequency(self.config.spi.write_frequency);
 
         // Configure Tearing Effect (TE) - Disabled for now
         regs.te_conf().write(|w| w.set_enable(false));
@@ -131,39 +324,32 @@ impl<'d, T: Instance> Lcdc<'d, T> {
     /// Uses a blocking wait with timeout since command transmission is very fast.
     fn wait_single_busy(&self) -> Result<(), Error> {
         let regs = T::regs();
-        let start = Instant::now();
-        while regs.lcd_single().read().lcd_busy() {
-            if start.elapsed() > Duration::from_millis(100) {
-                return Err(Error::Timeout);
-            }
-        }
-        Ok(())
+
+        blocking_wait_timeout_ms(|| regs.lcd_single().read().lcd_busy(), 100)
+            .map_err(|_| Error::Timeout)
     }
 
-    /// Helper: Wait for the Data Path (Layer/DMA) to be ready.
-    /// Uses a blocking wait for now to ensure safe state before starting new transfers.
-    fn wait_status_busy(&self) -> Result<(), Error> {
+    /// Helper: Wait for the interface to be ready.
+    /// Checks STATUS.lcd_busy and LCD_SINGLE.lcd_busy.
+    fn wait_busy(&self) -> Result<(), Error> {
         let regs = T::regs();
-        let start = Instant::now();
-        // Check both global status and single interface status
-        while regs.status().read().lcd_busy() || regs.lcd_single().read().lcd_busy() {
-            if start.elapsed() > Duration::from_millis(500) {
-                return Err(Error::Timeout);
-            }
-        }
-        Ok(())
+        blocking_wait_timeout_ms(
+            || regs.status().read().lcd_busy() || regs.lcd_single().read().lcd_busy(),
+            100,
+        )
+        .map_err(|_| Error::Timeout)
     }
 
     /// Send a command to the LCD via SPI.
     ///
-    /// This is blocking because SPI commands are short and there is no dedicated interrupt
-    /// for single command completion.
+    /// This is blocking because SPI commands are short.
+    /// Checks full busy status before starting.
     pub fn send_cmd(&mut self, cmd: u32, len_bytes: u8) -> Result<(), Error> {
         if len_bytes == 0 || len_bytes > 4 {
             return Err(Error::InvalidParameter);
         }
 
-        self.wait_single_busy()?;
+        self.wait_busy()?;
 
         let regs = T::regs();
 
@@ -171,9 +357,8 @@ impl<'d, T: Instance> Lcdc<'d, T> {
             // Set write mode to normal
             w.set_spi_rd_mode(SpiRdMode::Normal);
 
-            // Set the length of the transaction
             let len_val = match len_bytes {
-                1 => SpiAccessLen::Bytes1,
+                1 => SpiAccessLen::Bytes1, // SpiAccessLen::Bytes1 == 0
                 2 => SpiAccessLen::Bytes2,
                 3 => SpiAccessLen::Bytes3,
                 4 => SpiAccessLen::Bytes4,
@@ -230,6 +415,8 @@ impl<'d, T: Instance> Lcdc<'d, T> {
 
     /// Send pixel data (framebuffer) asynchronously.
     ///
+    /// use #[repr(align(4))] to your buffer to ensure proper alignment.
+    ///
     /// The signature is `async`, but the current implementation uses a polled wait (dead wait)
     /// for the End-Of-Frame (EOF) flag to allow for fast verification without complex interrupt handling.
     pub async fn send_pixel_data(
@@ -239,12 +426,16 @@ impl<'d, T: Instance> Lcdc<'d, T> {
         y0: u16,
         x1: u16,
         y1: u16,
-        layer_format: LayerFormat,
     ) -> Result<(), Error> {
+        debug_assert!(
+            buffer.as_ptr() as usize % 4 == 0,
+            "Buffer address must be 4-byte aligned"
+        );
+
         let regs = T::regs();
 
         // Ensure previous operations are complete
-        self.wait_status_busy()?;
+        self.wait_busy()?;
 
         let width = x1 - x0 + 1;
         // let height = y1 - y0 + 1; // Unused for now
@@ -259,6 +450,8 @@ impl<'d, T: Instance> Lcdc<'d, T> {
             w.set_y1(y1);
         });
 
+        let layer_format = self.config.in_color_format.to_layer_format();
+
         // Configure Layer 0
         regs.layer0_config().write(|w| {
             w.set_active(true);
@@ -269,12 +462,7 @@ impl<'d, T: Instance> Lcdc<'d, T> {
             w.set_v_mirror(false);
 
             // Calculate width in bytes for the pitch
-            let bpp = match layer_format {
-                LayerFormat::RGB565 | LayerFormat::ARGB8565 => 2,
-                LayerFormat::RGB888 => 3,
-                LayerFormat::ARGB8888 => 4,
-                _ => 2, // Default/Fallback
-            };
+            let bpp = self.config.in_color_format.bpp();
             let line_width_bytes = width * bpp;
             w.set_width(line_width_bytes);
         });
@@ -320,7 +508,7 @@ impl<'d, T: Instance> Lcdc<'d, T> {
                 break;
             }
 
-            if start_wait.elapsed() > Duration::from_secs(1) {
+            if start_wait.elapsed() > Duration::from_millis(1000) {
                 return Err(Error::Timeout);
             }
 
@@ -347,7 +535,7 @@ pub enum Error {
 pub(crate) trait SealedInstance:
     crate::rcc::RccEnableReset + crate::rcc::RccGetFreq
 {
-    fn regs() ->  crate::pac::lcdc::Lcdc;
+    fn regs() -> crate::pac::lcdc::Lcdc;
 }
 
 #[allow(private_bounds)]
