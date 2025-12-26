@@ -70,6 +70,7 @@ defmt = ["dep:defmt",
     "sifli-pac/defmt",
     "embassy-hal-internal/defmt",
     "musb?/defmt",
+    "display-interface/defmt-03"
 ]
 
 log = ["dep:log"]

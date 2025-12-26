@@ -2,6 +2,7 @@ use embassy_hal_internal::into_ref;
 use embassy_time::{Duration, Instant, Timer};
 use display_interface::{AsyncWriteOnlyDataCommand, DataFormat, DisplayError};
 
+use crate::gpio::{AfType, Pull};
 use crate::pac::lcdc::vals;
 use crate::rcc::enable_and_reset;
 use crate::time::Hertz;
@@ -212,7 +213,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             width: 240,
-            height: 320,
+            height: 240,
             out_color_format: OutputColorFormat::Rgb565,
             in_color_format: InputColorFormat::Rgb565,
             display_interface: LcdIntfSel::Spi,
@@ -229,9 +230,25 @@ pub struct Lcdc<'d, T: Instance> {
 }
 
 impl<'d, T: Instance> Lcdc<'d, T> {
-    /// Create a new LCDC driver instance
-    pub fn new(peri: impl Peripheral<P = T> + 'd, config: Config) -> Self {
+    /// Create a new LCDC QSPI driver instance
+    pub fn new_qspi(peri: impl Peripheral<P = T> + 'd,
+        spi_te: impl Peripheral<P = impl SpiTePin<T>> + 'd,
+        spi_cs: impl Peripheral<P = impl SpiCsPin<T>> + 'd,
+        spi_clk: impl Peripheral<P = impl SpiClkPin<T>> + 'd,
+        spi_dio0: impl Peripheral<P = impl SpiDio0Pin<T>> + 'd,
+        spi_dio1: impl Peripheral<P = impl SpiDio1Pin<T>> + 'd,
+        spi_dio2: impl Peripheral<P = impl SpiDio2Pin<T>> + 'd,
+        spi_dio3: impl Peripheral<P = impl SpiDio3Pin<T>> + 'd,
+        config: Config
+    ) -> Self {
         into_ref!(peri);
+        init_pin!(spi_te, AfType::new(Pull::None));
+        init_pin!(spi_cs, AfType::new(Pull::None));
+        init_pin!(spi_clk, AfType::new(Pull::None));
+        init_pin!(spi_dio0, AfType::new(Pull::None));
+        init_pin!(spi_dio1, AfType::new(Pull::None));
+        init_pin!(spi_dio2, AfType::new(Pull::None));
+        init_pin!(spi_dio3, AfType::new(Pull::None));
 
         assert!(
             config.display_interface == LcdIntfSel::Spi,
@@ -247,6 +264,22 @@ impl<'d, T: Instance> Lcdc<'d, T> {
             _peri: peri,
             config,
         }
+    }
+
+    /// TODO
+    pub fn new_qspi_with_rstb(peri: impl Peripheral<P = T> + 'd,
+        spi_rstb: impl Peripheral<P = impl SpiRstbPin<T>> + 'd,
+        spi_te: impl Peripheral<P = impl SpiTePin<T>> + 'd,
+        spi_cs: impl Peripheral<P = impl SpiCsPin<T>> + 'd,
+        spi_clk: impl Peripheral<P = impl SpiClkPin<T>> + 'd,
+        spi_dio0: impl Peripheral<P = impl SpiDio0Pin<T>> + 'd,
+        spi_dio1: impl Peripheral<P = impl SpiDio1Pin<T>> + 'd,
+        spi_dio2: impl Peripheral<P = impl SpiDio2Pin<T>> + 'd,
+        spi_dio3: impl Peripheral<P = impl SpiDio3Pin<T>> + 'd,
+        config: Config
+    ) -> Self {
+        init_pin!(spi_rstb, AfType::new(Pull::Down));
+        Self::new_qspi(peri, spi_te, spi_cs, spi_clk, spi_dio0, spi_dio1, spi_dio2, spi_dio3, config)
     }
 
     pub fn set_spi_frequency(&mut self, freq: FrequencyConfig) {
@@ -568,6 +601,16 @@ pub enum Error {
 // Trait Definitions
 // ============================================================================
 
+pin_trait!(SpiRstbPin, Instance);
+pin_trait!(SpiTePin, Instance);
+pin_trait!(SpiCsPin, Instance);
+pin_trait!(SpiClkPin, Instance);
+pin_trait!(SpiDio0Pin, Instance);
+pin_trait!(SpiDio1Pin, Instance);
+pin_trait!(SpiDio2Pin, Instance);
+pin_trait!(SpiDio3Pin, Instance);
+
+
 pub(crate) trait SealedInstance:
     crate::rcc::RccEnableReset + crate::rcc::RccGetFreq
 {
@@ -579,8 +622,6 @@ pub trait Instance: Peripheral<P = Self> + SealedInstance + 'static + Send {
     /// Interrupt for this peripheral.
     type Interrupt: interrupt::typelevel::Interrupt;
 }
-
-pin_trait!(SpiRstbPin, Instance);
 
 impl SealedInstance for peripherals::LCDC1 {
     fn regs() -> crate::pac::lcdc::Lcdc {
