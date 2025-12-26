@@ -1,16 +1,18 @@
-use crate::rcc::enable_and_reset;
-use crate::to_system_bus_addr;
-use crate::{interrupt, peripherals, time::Hertz, utils::blocking_wait_timeout_ms, Peripheral};
 use embassy_hal_internal::into_ref;
 use embassy_time::{Duration, Instant, Timer};
+use display_interface::{AsyncWriteOnlyDataCommand, DataFormat, DisplayError};
 
 use crate::pac::lcdc::vals;
+use crate::rcc::enable_and_reset;
+use crate::time::Hertz;
+use crate::to_system_bus_addr;
+use crate::utils::blocking_wait_timeout_ms;
+use crate::{interrupt, peripherals, Peripheral};
 
 pub use vals::{
     AlphaSel, LayerFormat, LcdFormat, LcdIntfSel, Polarity, SingleAccessType, SpiAccessLen,
     SpiClkInit, SpiClkPol, SpiLcdFormat, SpiLineMode, SpiRdMode, TargetLcd,
 };
-
 pub use vals::LcdIntfSel as LcdInterface;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -191,14 +193,17 @@ impl Default for SpiConfig {
 /// Main configuration for the LCDC driver
 #[derive(Debug, Clone)]
 pub struct Config {
+    pub width: u16,
+    pub height: u16,
+
     /// Output pixel format (target format sent to the display)
     pub out_color_format: OutputColorFormat,
     /// Input layer format (format of the framebuffer in memory)
     pub in_color_format: InputColorFormat,
-    /// TODO: Display interface selection (SPI/DBI/DSI)
-    pub display_interface: LcdIntfSel,
     /// LCD reset interval in microseconds
     pub reset_lcd_interval_us: u32,
+    /// TODO: Display interface selection (SPI/DBI/DSI)
+    pub display_interface: LcdIntfSel,
     /// SPI specific settings
     pub spi: SpiConfig,
 }
@@ -206,6 +211,8 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            width: 240,
+            height: 320,
             out_color_format: OutputColorFormat::Rgb565,
             in_color_format: InputColorFormat::Rgb565,
             display_interface: LcdIntfSel::Spi,
@@ -414,6 +421,20 @@ impl<'d, T: Instance> Lcdc<'d, T> {
         Ok(())
     }
 
+    /// Send a command followed by data parameters to the LCD.
+    pub fn send_cmd_and_data(&mut self, cmd: u32, cmd_len_bytes: u8, data: &[u8]) -> Result<(), Error> {
+        self.send_cmd(cmd, cmd_len_bytes)?;
+
+        for chunk in data.chunks(4) {
+            let mut data = 0u32;
+            for (i, &byte) in chunk.iter().enumerate() {
+                data |= (byte as u32) << (i * 8);
+            }
+            self.send_cmd_data(data, chunk.len() as u8)?;
+        }
+        Ok(())
+    }
+
     /// Send pixel data (framebuffer) asynchronously.
     ///
     /// use #[repr(align(4))] to your buffer to ensure proper alignment.
@@ -478,7 +499,7 @@ impl<'d, T: Instance> Lcdc<'d, T> {
         });
 
         // Set Source Address
-        // Note: Buffer alignment requirements (usually 2 bytes for RGB565) are assumed to be met.
+        // Note: Buffer alignment requirements
         let addr = to_system_bus_addr(buffer.as_ptr() as usize) as u32;
         regs.layer0_src().write(|w| w.set_addr(addr));
 
@@ -519,6 +540,20 @@ impl<'d, T: Instance> Lcdc<'d, T> {
 
         Ok(())
     }
+
+    pub async fn send_pixel_data_fullscreen(
+        &mut self,
+        buffer: &[u8],
+    ) -> Result<(), Error> {
+        self.send_pixel_data(
+            buffer,
+            0,
+            0,
+            self.config.width - 1,
+            self.config.height - 1,
+        )
+        .await
+    }
 }
 
 /// Errors that can occur during LCD operations
@@ -554,4 +589,52 @@ impl SealedInstance for peripherals::LCDC1 {
 }
 impl Instance for peripherals::LCDC1 {
     type Interrupt = crate::interrupt::typelevel::LCDC1;
+}
+
+// ============================================================================
+// Trait Implementations
+// ============================================================================
+
+impl<'d, T: Instance> AsyncWriteOnlyDataCommand for Lcdc<'d, T> {
+    async fn send_commands(&mut self, cmd: DataFormat<'_>) -> Result<(), DisplayError> {
+        let cmd = match cmd {
+            DataFormat::U8(slice) => slice,
+            _ => return Err(DisplayError::InvalidFormatError),
+        };
+        
+        self.send_cmd(cmd[0] as u32, 1).map_err(|_| DisplayError::BusWriteError)
+    }
+    
+    async fn send_data(&mut self, buf: DataFormat<'_>) -> Result<(), DisplayError> {
+        let data = match buf {
+            DataFormat::U8(slice) => slice,
+            _ => return Err(DisplayError::InvalidFormatError),
+        };
+
+        let bpp = self.config.in_color_format.bpp() as usize;
+        let frame_size = (self.config.width as usize)
+            * (self.config.height as usize)
+            * bpp;
+
+        // TODO: distinguish between command data and pixel data
+        if data.len() < 50 || data.len() % bpp != 0 {
+            // Treat as command data (parameters)
+            if data.len() > 50 {
+                return Err(DisplayError::InvalidFormatError);
+            }
+            
+            for &byte in data {
+                self.send_cmd_data(byte as u32, 1)
+                    .map_err(|_| DisplayError::BusWriteError)?;
+            }
+            Ok(())
+        } else if data.len() == frame_size {
+            self.send_pixel_data_fullscreen(data)
+                .await
+                .map_err(|_| DisplayError::BusWriteError)
+        } else {
+            // Data size does not match expected frame size
+            Err(DisplayError::OutOfBoundsError)
+        }
+    }
 }
