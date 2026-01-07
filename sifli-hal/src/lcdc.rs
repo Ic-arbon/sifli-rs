@@ -1,21 +1,30 @@
+use core::future::poll_fn;
+use core::marker::PhantomData;
+use core::sync::atomic::{compiler_fence, Ordering};
+use core::task::Poll;
+
 use display_driver::{DisplayError, display_bus};
 use display_driver::display_bus::DisplayBus;
-use embassy_hal_internal::into_ref;
-use embassy_time::{Duration, Instant, Timer};
+use embassy_hal_internal::{into_ref, Peripheral};
+use embassy_sync::waitqueue::AtomicWaker;
+use embassy_time::{Duration, Timer};
 
 use crate::gpio::{AfType, Pull};
+use crate::interrupt::typelevel::{Binding, Interrupt};
 use crate::pac::lcdc::vals;
 use crate::rcc::enable_and_reset;
 use crate::time::Hertz;
 use crate::to_system_bus_addr;
 use crate::utils::blocking_wait_timeout_ms;
-use crate::{interrupt, peripherals, Peripheral};
+use crate::{interrupt, peripherals};
 
 pub use vals::{
     AlphaSel, LayerFormat, LcdFormat, LcdIntfSel, Polarity, SingleAccessType, SpiAccessLen,
     SpiClkInit, SpiClkPol, SpiLcdFormat, SpiLineMode, SpiRdMode, TargetLcd,
 };
 pub use vals::LcdIntfSel as LcdInterface;
+
+static WAKER: AtomicWaker = AtomicWaker::new();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InterfaceType {
@@ -224,6 +233,40 @@ impl Default for Config {
     }
 }
 
+/// LCDC Interrupt Handler
+pub struct InterruptHandler<T: Instance> {
+    _phantom: PhantomData<T>,
+}
+
+impl<T: Instance> interrupt::typelevel::Handler<T::Interrupt> for InterruptHandler<T> {
+    unsafe fn on_interrupt() {
+        let regs = T::regs();
+        let irq_status = regs.irq().read();
+
+        // Check for Errors
+        // If an error occurs, we mask the interrupt to stop the IRQ loop,
+        // but we DO NOT clear the status flag so the main thread can read it.
+        if irq_status.dpi_udr_raw_stat() {
+            // Mask DPI Underflow Interrupt
+            regs.setting().modify(|w| w.set_dpi_udr_mask(false));
+        }
+
+        if irq_status.icb_of_raw_stat() {
+            // Mask Buffer Overflow Interrupt
+             regs.setting().modify(|w| w.set_icb_of_mask(false));
+        }
+
+        // 2. Check for End of Frame (EOF)
+        if irq_status.eof_raw_stat() {
+            // Mask EOF Interrupt (Disable it)
+            // This acts as the "signal" that the transfer is complete.
+            regs.setting().modify(|w| w.set_eof_mask(false));
+        }
+
+        WAKER.wake();
+    }
+}
+
 /// LCDC Driver implementation for SF32LB52x
 pub struct Lcdc<'d, T: Instance> {
     _peri: crate::PeripheralRef<'d, T>,
@@ -232,7 +275,9 @@ pub struct Lcdc<'d, T: Instance> {
 
 impl<'d, T: Instance> Lcdc<'d, T> {
     /// Create a new LCDC QSPI driver instance
-    pub fn new_qspi(peri: impl Peripheral<P = T> + 'd,
+    pub fn new_qspi(
+        peri: impl Peripheral<P = T> + 'd,
+        _irq: impl Binding<T::Interrupt, InterruptHandler<T>>,
         spi_te: impl Peripheral<P = impl SpiTePin<T>> + 'd,
         spi_cs: impl Peripheral<P = impl SpiCsPin<T>> + 'd,
         spi_clk: impl Peripheral<P = impl SpiClkPin<T>> + 'd,
@@ -240,7 +285,7 @@ impl<'d, T: Instance> Lcdc<'d, T> {
         spi_dio1: impl Peripheral<P = impl SpiDio1Pin<T>> + 'd,
         spi_dio2: impl Peripheral<P = impl SpiDio2Pin<T>> + 'd,
         spi_dio3: impl Peripheral<P = impl SpiDio3Pin<T>> + 'd,
-        config: Config
+        config: Config,
     ) -> Self {
         into_ref!(peri);
         init_pin!(spi_te, AfType::new(Pull::None));
@@ -261,14 +306,20 @@ impl<'d, T: Instance> Lcdc<'d, T> {
             "Unsupported output format for SPI interface"
         );
 
+        unsafe { 
+            T::Interrupt::unpend();
+            T::Interrupt::enable();
+        }
+
         Self {
             _peri: peri,
             config,
         }
     }
 
-    /// TODO
-    pub fn new_qspi_with_rstb(peri: impl Peripheral<P = T> + 'd,
+    pub fn new_qspi_with_rstb(
+        peri: impl Peripheral<P = T> + 'd,
+        irq: impl Binding<T::Interrupt, InterruptHandler<T>>,
         spi_rstb: impl Peripheral<P = impl SpiRstbPin<T>> + 'd,
         spi_te: impl Peripheral<P = impl SpiTePin<T>> + 'd,
         spi_cs: impl Peripheral<P = impl SpiCsPin<T>> + 'd,
@@ -277,10 +328,12 @@ impl<'d, T: Instance> Lcdc<'d, T> {
         spi_dio1: impl Peripheral<P = impl SpiDio1Pin<T>> + 'd,
         spi_dio2: impl Peripheral<P = impl SpiDio2Pin<T>> + 'd,
         spi_dio3: impl Peripheral<P = impl SpiDio3Pin<T>> + 'd,
-        config: Config
+        config: Config,
     ) -> Self {
         init_pin!(spi_rstb, AfType::new(Pull::Down));
-        Self::new_qspi(peri, spi_te, spi_cs, spi_clk, spi_dio0, spi_dio1, spi_dio2, spi_dio3, config)
+        Self::new_qspi(
+            peri, irq, spi_te, spi_cs, spi_clk, spi_dio0, spi_dio1, spi_dio2, spi_dio3, config,
+        )
     }
 
     pub fn set_spi_frequency(&mut self, freq: FrequencyConfig) {
@@ -456,6 +509,34 @@ impl<'d, T: Instance> Lcdc<'d, T> {
         Ok(())
     }
 
+    /// Waits asynchronously for the pixel transfer to complete using interrupts.
+    async fn wait_for_transfer_completion(&mut self) -> Result<(), Error> {
+        let regs = T::regs();
+        
+        poll_fn(move |cx| {
+            WAKER.register(cx.waker());
+            
+            // Check for Errors by reading raw status
+            // Note: We didn't clear them in ISR, so they persist
+            let irq = regs.irq().read();
+            if irq.dpi_udr_raw_stat() {
+                return Poll::Ready(Err(Error::DpiUnderflow));
+            }
+            if irq.icb_of_raw_stat() {
+                return Poll::Ready(Err(Error::LayerOverflow));
+            }
+
+            // Check if EOF interrupt is masked/disabled
+            // This indicates the ISR has run and disabled the interrupt
+            if !regs.setting().read().eof_mask() {
+                 return Poll::Ready(Ok(()));
+            }
+
+            Poll::Pending
+        })
+        .await
+    }
+
     /// Send pixel data (framebuffer) asynchronously.
     ///
     /// use #[repr(align(4))] to your buffer to ensure proper alignment.
@@ -481,7 +562,6 @@ impl<'d, T: Instance> Lcdc<'d, T> {
         self.wait_busy()?;
 
         let width = x1 - x0 + 1;
-        // let height = y1 - y0 + 1; // Unused for now
 
         // Configure Canvas Area (ROI)
         regs.canvas_tl_pos().write(|w| {
@@ -528,42 +608,30 @@ impl<'d, T: Instance> Lcdc<'d, T> {
         let addr = to_system_bus_addr(buffer.as_ptr() as usize) as u32;
         regs.layer0_src().write(|w| w.set_addr(addr));
 
+        // --- Interrupt Setup ---
+        
+        // Clear any pending status flags from previous runs
+        regs.irq().write(|w| {
+            w.set_eof_stat(true);
+            w.set_dpi_udr_stat(true);
+            w.set_icb_of_stat(true);
+        });
+
+        // Enable/Unmask Interrupts
+        // set_eof_mask(true) enables the EOF interrupt.
+        // We also enable error interrupts to ensure we catch them.
+        regs.setting().modify(|w| {
+            w.set_eof_mask(true);
+            w.set_dpi_udr_mask(true);
+            w.set_icb_of_mask(true);
+        });
+        
+        compiler_fence(Ordering::SeqCst);
+
         // Start Transfer
         regs.command().write(|w| w.set_start(true));
 
-        // Wait for transfer completion (EOF)
-        // Using a loop with a small async sleep to allow the executor to do other things,
-        // effectively polling the hardware register.
-        let start_wait = Instant::now();
-        loop {
-            let irq = regs.irq().read();
-
-            // Check for HW errors
-            if irq.dpi_udr_raw_stat() || irq.icb_of_raw_stat() {
-                // Clear error flags
-                regs.irq().write(|w| {
-                    w.set_dpi_udr_stat(true);
-                    w.set_icb_of_stat(true);
-                });
-                return Err(Error::HardwareError(irq.0));
-            }
-
-            // Check for End Of Frame
-            if irq.eof_raw_stat() {
-                // Clear EOF flag
-                regs.irq().write(|w| w.set_eof_stat(true));
-                break;
-            }
-
-            if start_wait.elapsed() > Duration::from_millis(10000) {
-                return Err(Error::Timeout);
-            }
-
-            // Yield briefly
-            Timer::after(Duration::from_micros(50)).await;
-        }
-
-        Ok(())
+        self.wait_for_transfer_completion().await
     }
 
     pub async fn send_pixel_data_framebuffer(
@@ -610,10 +678,11 @@ pub enum Error {
     Timeout,
     InvalidParameter,
     UnalignedData,
-    HardwareError(u32),
-
+    /// DPI Underflow Error
+    DpiUnderflow,
+    /// Buffer Overflow Error
+    LayerOverflow,
 }
-
 // ============================================================================
 // Trait Definitions
 // ============================================================================
@@ -627,7 +696,6 @@ pin_trait!(SpiDio1Pin, Instance);
 pin_trait!(SpiDio2Pin, Instance);
 pin_trait!(SpiDio3Pin, Instance);
 
-
 pub(crate) trait SealedInstance:
     crate::rcc::RccEnableReset + crate::rcc::RccGetFreq
 {
@@ -636,7 +704,6 @@ pub(crate) trait SealedInstance:
 
 #[allow(private_bounds)]
 pub trait Instance: Peripheral<P = Self> + SealedInstance + 'static + Send {
-    /// Interrupt for this peripheral.
     type Interrupt: interrupt::typelevel::Interrupt;
 }
 
