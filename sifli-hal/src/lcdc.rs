@@ -1,6 +1,7 @@
+use display_driver::{DisplayError, display_bus};
+use display_driver::display_bus::DisplayBus;
 use embassy_hal_internal::into_ref;
 use embassy_time::{Duration, Instant, Timer};
-use display_interface::{AsyncWriteOnlyDataCommand, DataFormat, DisplayError};
 
 use crate::gpio::{AfType, Pull};
 use crate::pac::lcdc::vals;
@@ -565,16 +566,39 @@ impl<'d, T: Instance> Lcdc<'d, T> {
         Ok(())
     }
 
-    pub async fn send_pixel_data_fullscreen(
+    pub async fn send_pixel_data_framebuffer(
         &mut self,
         buffer: &[u8],
     ) -> Result<(), Error> {
+        self.send_pixel_data_rect(self.config.width, self.config.height, buffer).await
+    }
+
+    pub async fn send_pixel_data_rect(
+        &mut self,
+        width: u16,
+        height: u16,
+        buffer: &[u8],
+    ) -> Result<(), Error> {
+        let bpp = self.config.in_color_format.bpp() as usize;
+        let len = buffer.len();
+        
+        if len % bpp != 0 {
+            return Err(Error::UnalignedData);
+        }
+        
+        let pixel_count = len / bpp;
+
+        if (width as usize) * (height as usize) != pixel_count {
+            error!("Buffer size mismatch: expected {} bytes, got {} (width={}, height={})", (width as usize) * (height as usize) * bpp, len, width, height);
+            return Err(Error::UnalignedData);
+        }
+
         self.send_pixel_data(
             buffer,
             0,
             0,
-            self.config.width - 1,
-            self.config.height - 1,
+            width - 1,
+            height - 1,
         )
         .await
     }
@@ -585,7 +609,9 @@ impl<'d, T: Instance> Lcdc<'d, T> {
 pub enum Error {
     Timeout,
     InvalidParameter,
+    UnalignedData,
     HardwareError(u32),
+
 }
 
 // ============================================================================
@@ -627,59 +653,61 @@ impl Instance for peripherals::LCDC1 {
 // Trait Implementations
 // ============================================================================
 
-/// IMPORTANT: This implementation only for initializing the display via commands.
-/// For sending pixel data, use the `send_pixel_data` method directly.
-impl<'d, T: Instance> AsyncWriteOnlyDataCommand for Lcdc<'d, T> {
-    async fn send_commands(&mut self, cmd: DataFormat<'_>) -> Result<(), DisplayError> {
-        let cmd = match cmd {
-            DataFormat::U8(slice) => slice,
-            _ => return Err(DisplayError::InvalidFormatError),
-        };
+
+impl<'d, T: Instance> DisplayBus for Lcdc<'d, T> {
+    type Error = Error;
+    
+    async fn write_cmds(&mut self, cmd: &[u8]) -> Result<(), Self::Error> {
+        if cmd.is_empty() || cmd.len() > 4 {
+            return Err(Error::InvalidParameter);
+        }
         
-        cmd.iter().try_for_each(|&byte| {
-            let word = ((byte as u32) << 8) + (0x02 << 24);
-            self.send_cmd(word, 4)
-                .map_err(|_| DisplayError::BusWriteError)
-        })
+        let cmd_word = cmd.iter()
+            .fold(0u32, |acc, &byte| (acc << 8) | (byte as u32));
+        
+        self.send_cmd(cmd_word, cmd.len() as u8, false)
     }
     
-    async fn send_data(&mut self, buf: DataFormat<'_>) -> Result<(), DisplayError> {
-        let data = match buf {
-            DataFormat::U8(slice) => slice,
-            _ => return Err(DisplayError::InvalidFormatError),
-        };
-
-        for &byte in data {
-            self.send_cmd_data(byte as u32, 1)
-                .map_err(|_| DisplayError::BusWriteError)?;
+    async fn write_cmd_with_params(&mut self, cmd: &[u8], params: &[u8]) -> Result<(), Self::Error> {
+        if cmd.is_empty() || cmd.len() > 4 {
+            return Err(Error::InvalidParameter);
         }
-        Ok(())
+        
+        let cmd_word = cmd.iter()
+            .fold(0u32, |acc, &byte| (acc << 8) | (byte as u32));
+        
+        self.send_cmd(cmd_word, cmd.len() as u8, params.len() != 0)?;
 
-        // let bpp = self.config.in_color_format.bpp() as usize;
-        // let frame_size = (self.config.width as usize)
-        //     * (self.config.height as usize)
-        //     * bpp;
+        if params.len() > 0 {
+            params.chunks(4)
+            .enumerate()
+            .try_for_each(|(i, chunk)| {
+                let data_word = chunk
+                    .iter()
+                    .fold(0u32, |acc, &byte| (acc << 8) | (byte as u32));
+                
+                let is_last = (i + 1) * 4 >= params.len();
+                self.send_cmd_data(data_word, chunk.len() as u8, !is_last)
+            })
+        } else {
+            Ok(())
+        }
+    }
+    
+    async fn write_pixels(&mut self, cmd: &[u8], params: &[u8], buffer: &[u8], metadata: display_bus::Metadata) -> Result<(), DisplayError<Self::Error>> {
+        if params.len() > 0 {
+            todo!()
+        }
+        
+        if cmd.is_empty() || cmd.len() > 4 {
+            return Err(DisplayError::BusError(Error::InvalidParameter));
+        }
+        
+        let cmd_word = cmd.iter()
+            .fold(0u32, |acc, &byte| (acc << 8) | (byte as u32));
+        
+        self.send_cmd(cmd_word, cmd.len() as u8, true).map_err(DisplayError::BusError)?;
 
-        // // TODO: distinguish between command data and pixel data
-        // if data.len() < 1000000 || data.len() % bpp != 0 {
-        //     // Treat as command data (parameters)
-        //     // if data.len() > 50 {
-        //     //     return Err(DisplayError::InvalidFormatError);
-        //     // }
-            
-        //     for &byte in data {
-        //         self.send_cmd_data(byte as u32, 1)
-        //             .map_err(|_| DisplayError::BusWriteError)?;
-        //     }
-        //     Ok(())
-        // } else if data.len() == frame_size {
-        //     self.send_pixel_data_fullscreen(data)
-        //         .await
-        //         .unwrap();
-        //     Ok(())
-        // } else {
-        //     // Data size does not match expected frame size
-        //     Err(DisplayError::OutOfBoundsError)
-        // }
+        self.send_pixel_data_rect(metadata.width, metadata.height, buffer).await.map_err(DisplayError::BusError)
     }
 }
