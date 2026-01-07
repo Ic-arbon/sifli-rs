@@ -180,7 +180,7 @@ pub struct SpiConfig {
 impl Default for SpiConfig {
     fn default() -> Self {
         Self {
-            line_mode: SpiLineMode::FourLine,
+            line_mode: SpiLineMode::FourLine4Data,
             clk_polarity: SpiClkPol::Normal,
             clk_phase: SpiClkInit::Low,
             cs_polarity: Polarity::ActiveLow,
@@ -347,7 +347,6 @@ impl<'d, T: Instance> Lcdc<'d, T> {
             w.set_spi_cs_pol(self.config.spi.cs_polarity);
             w.set_spi_clk_pol(self.config.spi.clk_polarity);
             w.set_spi_clk_init(self.config.spi.clk_phase);
-            w.set_spi_cs_auto_dis(true); // Disable CS after transaction
             w.set_spi_clk_auto_dis(true); // Disable CLK when idle
             w.set_spi_cs_no_idle(true); // Keep CS active during transaction
             w.set_dummy_cycle(0);
@@ -385,7 +384,7 @@ impl<'d, T: Instance> Lcdc<'d, T> {
     ///
     /// This is blocking because SPI commands are short.
     /// Checks full busy status before starting.
-    pub fn send_cmd(&mut self, cmd: u32, len_bytes: u8) -> Result<(), Error> {
+    pub fn send_cmd(&mut self, cmd: u32, len_bytes: u8, continuous: bool) -> Result<(), Error> {
         if len_bytes == 0 || len_bytes > 4 {
             return Err(Error::InvalidParameter);
         }
@@ -397,6 +396,7 @@ impl<'d, T: Instance> Lcdc<'d, T> {
         regs.spi_if_conf().modify(|w| {
             // Set write mode to normal
             w.set_spi_rd_mode(SpiRdMode::Normal);
+            w.set_spi_cs_auto_dis(!continuous);
 
             let len_val = match len_bytes {
                 1 => SpiAccessLen::Bytes1, // SpiAccessLen::Bytes1 == 0
@@ -423,7 +423,7 @@ impl<'d, T: Instance> Lcdc<'d, T> {
     /// Send data parameter to the LCD via SPI.
     ///
     /// This is blocking, used for sending parameters immediately after a command.
-    pub fn send_cmd_data(&mut self, data: u32, len_bytes: u8) -> Result<(), Error> {
+    pub fn send_cmd_data(&mut self, data: u32, len_bytes: u8, continuous: bool) -> Result<(), Error> {
         if len_bytes == 0 || len_bytes > 4 {
             return Err(Error::InvalidParameter);
         }
@@ -433,6 +433,7 @@ impl<'d, T: Instance> Lcdc<'d, T> {
         let regs = T::regs();
 
         regs.spi_if_conf().modify(|w| {
+            w.set_spi_cs_auto_dis(!continuous);
             let len_val = match len_bytes {
                 1 => SpiAccessLen::Bytes1,
                 2 => SpiAccessLen::Bytes2,
@@ -451,20 +452,6 @@ impl<'d, T: Instance> Lcdc<'d, T> {
             w.set_type_(SingleAccessType::Data);
         });
 
-        Ok(())
-    }
-
-    /// Send a command followed by data parameters to the LCD.
-    pub fn send_cmd_and_data(&mut self, cmd: u32, cmd_len_bytes: u8, data: &[u8]) -> Result<(), Error> {
-        self.send_cmd(cmd, cmd_len_bytes)?;
-
-        for chunk in data.chunks(4) {
-            let mut data = 0u32;
-            for (i, &byte) in chunk.iter().enumerate() {
-                data |= (byte as u32) << (i * 8);
-            }
-            self.send_cmd_data(data, chunk.len() as u8)?;
-        }
         Ok(())
     }
 
@@ -531,6 +518,10 @@ impl<'d, T: Instance> Lcdc<'d, T> {
             w.set_y1(y1);
         });
 
+        regs.spi_if_conf().modify(|w| {
+            w.set_spi_cs_auto_dis(true);
+        });
+
         // Set Source Address
         // Note: Buffer alignment requirements
         let addr = to_system_bus_addr(buffer.as_ptr() as usize) as u32;
@@ -563,7 +554,7 @@ impl<'d, T: Instance> Lcdc<'d, T> {
                 break;
             }
 
-            if start_wait.elapsed() > Duration::from_millis(1000) {
+            if start_wait.elapsed() > Duration::from_millis(10000) {
                 return Err(Error::Timeout);
             }
 
@@ -636,6 +627,8 @@ impl Instance for peripherals::LCDC1 {
 // Trait Implementations
 // ============================================================================
 
+/// IMPORTANT: This implementation only for initializing the display via commands.
+/// For sending pixel data, use the `send_pixel_data` method directly.
 impl<'d, T: Instance> AsyncWriteOnlyDataCommand for Lcdc<'d, T> {
     async fn send_commands(&mut self, cmd: DataFormat<'_>) -> Result<(), DisplayError> {
         let cmd = match cmd {
@@ -643,7 +636,11 @@ impl<'d, T: Instance> AsyncWriteOnlyDataCommand for Lcdc<'d, T> {
             _ => return Err(DisplayError::InvalidFormatError),
         };
         
-        self.send_cmd(cmd[0] as u32, 1).map_err(|_| DisplayError::BusWriteError)
+        cmd.iter().try_for_each(|&byte| {
+            let word = ((byte as u32) << 8) + (0x02 << 24);
+            self.send_cmd(word, 4)
+                .map_err(|_| DisplayError::BusWriteError)
+        })
     }
     
     async fn send_data(&mut self, buf: DataFormat<'_>) -> Result<(), DisplayError> {
@@ -652,30 +649,37 @@ impl<'d, T: Instance> AsyncWriteOnlyDataCommand for Lcdc<'d, T> {
             _ => return Err(DisplayError::InvalidFormatError),
         };
 
-        let bpp = self.config.in_color_format.bpp() as usize;
-        let frame_size = (self.config.width as usize)
-            * (self.config.height as usize)
-            * bpp;
-
-        // TODO: distinguish between command data and pixel data
-        if data.len() < 50 || data.len() % bpp != 0 {
-            // Treat as command data (parameters)
-            if data.len() > 50 {
-                return Err(DisplayError::InvalidFormatError);
-            }
-            
-            for &byte in data {
-                self.send_cmd_data(byte as u32, 1)
-                    .map_err(|_| DisplayError::BusWriteError)?;
-            }
-            Ok(())
-        } else if data.len() == frame_size {
-            self.send_pixel_data_fullscreen(data)
-                .await
-                .map_err(|_| DisplayError::BusWriteError)
-        } else {
-            // Data size does not match expected frame size
-            Err(DisplayError::OutOfBoundsError)
+        for &byte in data {
+            self.send_cmd_data(byte as u32, 1)
+                .map_err(|_| DisplayError::BusWriteError)?;
         }
+        Ok(())
+
+        // let bpp = self.config.in_color_format.bpp() as usize;
+        // let frame_size = (self.config.width as usize)
+        //     * (self.config.height as usize)
+        //     * bpp;
+
+        // // TODO: distinguish between command data and pixel data
+        // if data.len() < 1000000 || data.len() % bpp != 0 {
+        //     // Treat as command data (parameters)
+        //     // if data.len() > 50 {
+        //     //     return Err(DisplayError::InvalidFormatError);
+        //     // }
+            
+        //     for &byte in data {
+        //         self.send_cmd_data(byte as u32, 1)
+        //             .map_err(|_| DisplayError::BusWriteError)?;
+        //     }
+        //     Ok(())
+        // } else if data.len() == frame_size {
+        //     self.send_pixel_data_fullscreen(data)
+        //         .await
+        //         .unwrap();
+        //     Ok(())
+        // } else {
+        //     // Data size does not match expected frame size
+        //     Err(DisplayError::OutOfBoundsError)
+        // }
     }
 }
