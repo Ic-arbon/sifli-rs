@@ -24,7 +24,5 @@ embedded-io-async = { version = "0.6.1" }
 defmt = "1"
 defmt-rtt = "1"
 heapless = "0.9"
-embassy-usb = { version="0.5", features = ["defmt"] }
-usbd-hid = { version="0.8", features = ["defmt"] }
 static_cell = "2.1.1"
 portable-atomic = "1.11.1"

@@ -48,6 +48,7 @@ embedded-storage = { version = "0.3" }
 embedded-storage-async = { version = "0.4.1" }
 portable-atomic = { version = "1.11.1", features = ["require-cas"] }
 display-interface = "0.5.0"
+display-driver = { git = "https://github.com/decaday/display-driver" }
 
 [build-dependencies]
 serde = { version = "1.0", features = ["derive"] }
