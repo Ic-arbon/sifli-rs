@@ -82,9 +82,7 @@ async fn main(_spawner: Spawner) {
     // 2. LCDC Configuration
     let config = sifli_hal::lcdc::Config { 
         width: WIDTH as u16, 
-        height: HEIGHT as u16, 
-        display_interface: 
-        lcdc::LcdIntfSel::Spi, 
+        height: HEIGHT as u16,
         ..Default::default() 
     };
     

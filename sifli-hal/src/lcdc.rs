@@ -22,9 +22,49 @@ pub use vals::{
     AlphaSel, LayerFormat, LcdFormat, LcdIntfSel, Polarity, SingleAccessType, SpiAccessLen,
     SpiClkInit, SpiClkPol, SpiLcdFormat, SpiLineMode, SpiRdMode, TargetLcd,
 };
-pub use vals::LcdIntfSel as LcdInterface;
+pub use vals::LcdIntfSel as LcdInterfaceSelector;
 
 static WAKER: AtomicWaker = AtomicWaker::new();
+
+// ============================================================================
+// Interface Abstraction (Sealed Trait Pattern)
+// ============================================================================
+
+mod sealed {
+    pub trait SealedInterface {}
+}
+
+/// Trait implemented by LCD interface types (SPI, etc.) to define configuration
+/// and hardware selection.
+pub trait LcdInterface: sealed::SealedInterface + 'static {
+    /// Configuration struct specific to this interface (e.g., SpiConfig).
+    type Config: Clone + core::fmt::Debug + Default;
+    /// The hardware selector value for the LCD_CONF register.
+    const SELECTOR: LcdIntfSel;
+    /// The abstract interface type used for format checking.
+    const TYPE: InterfaceType;
+}
+
+/// SPI Interface Marker
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Spi;
+
+impl sealed::SealedInterface for Spi {}
+impl LcdInterface for Spi {
+    type Config = SpiConfig;
+    const SELECTOR: LcdIntfSel = LcdIntfSel::Spi;
+    const TYPE: InterfaceType = InterfaceType::Spi;
+}
+
+// Placeholders for future expansion
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Dbi;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Dsi;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Dpi;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Jdi;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InterfaceType {
@@ -61,19 +101,6 @@ pub const INTERFACE_COLOR_FORMATS: &[(InterfaceType, &[OutputColorFormat])] = &[
 ];
 
 impl InterfaceType {
-    pub fn from_lcd_interface(intf: LcdIntfSel) -> Self {
-        match intf {
-            LcdIntfSel::Spi => InterfaceType::Spi,
-            LcdIntfSel::DbiTypeB => InterfaceType::Dbi,
-            LcdIntfSel::DbiToDsi => InterfaceType::Dsi,
-            LcdIntfSel::Dpi => InterfaceType::Dpi,
-            LcdIntfSel::JdiSerial => InterfaceType::Jdi,
-            LcdIntfSel::JdiParallel => InterfaceType::Jdi,
-            LcdIntfSel::DbiTypeA => InterfaceType::Dbi,
-            LcdIntfSel::DpiToDsi => InterfaceType::Dsi,
-        }
-    }
-
     pub fn supports_output_format(&self, format: &OutputColorFormat) -> bool {
         INTERFACE_COLOR_FORMATS
             .iter()
@@ -81,6 +108,10 @@ impl InterfaceType {
             .is_some_and(|(_, formats)| formats.contains(format))
     }
 }
+
+// ============================================================================
+// Data Formats
+// ============================================================================
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputColorFormat {
@@ -160,6 +191,10 @@ impl OutputColorFormat {
     }
 }
 
+// ============================================================================
+// Configuration
+// ============================================================================
+
 #[derive(Debug, Clone, Copy)]
 pub enum FrequencyConfig {
     /// Use fixed frequency
@@ -203,7 +238,7 @@ impl Default for SpiConfig {
 
 /// Main configuration for the LCDC driver
 #[derive(Debug, Clone)]
-pub struct Config {
+pub struct Config<I: LcdInterface> {
     pub width: u16,
     pub height: u16,
 
@@ -213,25 +248,27 @@ pub struct Config {
     pub in_color_format: InputColorFormat,
     /// LCD reset interval in microseconds
     pub reset_lcd_interval_us: u32,
-    /// TODO: Display interface selection (SPI/DBI/DSI)
-    pub display_interface: LcdIntfSel,
-    /// SPI specific settings
-    pub spi: SpiConfig,
+    
+    /// Interface specific settings (e.g., SpiConfig)
+    pub interface_config: I::Config,
 }
 
-impl Default for Config {
+impl Default for Config<Spi> {
     fn default() -> Self {
         Self {
             width: 240,
             height: 240,
             out_color_format: OutputColorFormat::Rgb565,
             in_color_format: InputColorFormat::Rgb565,
-            display_interface: LcdIntfSel::Spi,
             reset_lcd_interval_us: 20,
-            spi: SpiConfig::default(),
+            interface_config: SpiConfig::default(),
         }
     }
 }
+
+// ============================================================================
+// LCDC Driver
+// ============================================================================
 
 /// LCDC Interrupt Handler
 pub struct InterruptHandler<T: Instance> {
@@ -256,7 +293,7 @@ impl<T: Instance> interrupt::typelevel::Handler<T::Interrupt> for InterruptHandl
              regs.setting().modify(|w| w.set_icb_of_mask(false));
         }
 
-        // 2. Check for End of Frame (EOF)
+        // Check for End of Frame (EOF)
         if irq_status.eof_raw_stat() {
             // Mask EOF Interrupt (Disable it)
             // This acts as the "signal" that the transfer is complete.
@@ -268,12 +305,13 @@ impl<T: Instance> interrupt::typelevel::Handler<T::Interrupt> for InterruptHandl
 }
 
 /// LCDC Driver implementation for SF32LB52x
-pub struct Lcdc<'d, T: Instance> {
+pub struct Lcdc<'d, T: Instance, I: LcdInterface> {
     _peri: crate::PeripheralRef<'d, T>,
-    config: Config,
+    config: Config<I>,
+    _phantom: PhantomData<I>,
 }
 
-impl<'d, T: Instance> Lcdc<'d, T> {
+impl<'d, T: Instance> Lcdc<'d, T, Spi> {
     /// Create a new LCDC QSPI driver instance
     pub fn new_qspi(
         peri: impl Peripheral<P = T> + 'd,
@@ -285,7 +323,7 @@ impl<'d, T: Instance> Lcdc<'d, T> {
         spi_dio1: impl Peripheral<P = impl SpiDio1Pin<T>> + 'd,
         spi_dio2: impl Peripheral<P = impl SpiDio2Pin<T>> + 'd,
         spi_dio3: impl Peripheral<P = impl SpiDio3Pin<T>> + 'd,
-        config: Config,
+        config: Config<Spi>,
     ) -> Self {
         into_ref!(peri);
         init_pin!(spi_te, AfType::new(Pull::None));
@@ -297,12 +335,7 @@ impl<'d, T: Instance> Lcdc<'d, T> {
         init_pin!(spi_dio3, AfType::new(Pull::None));
 
         assert!(
-            config.display_interface == LcdIntfSel::Spi,
-            "Only SPI interface is supported now"
-        );
-        assert!(
-            InterfaceType::from_lcd_interface(config.display_interface)
-                .supports_output_format(&config.out_color_format),
+            Spi::TYPE.supports_output_format(&config.out_color_format),
             "Unsupported output format for SPI interface"
         );
 
@@ -314,6 +347,7 @@ impl<'d, T: Instance> Lcdc<'d, T> {
         Self {
             _peri: peri,
             config,
+            _phantom: PhantomData,
         }
     }
 
@@ -328,7 +362,7 @@ impl<'d, T: Instance> Lcdc<'d, T> {
         spi_dio1: impl Peripheral<P = impl SpiDio1Pin<T>> + 'd,
         spi_dio2: impl Peripheral<P = impl SpiDio2Pin<T>> + 'd,
         spi_dio3: impl Peripheral<P = impl SpiDio3Pin<T>> + 'd,
-        config: Config,
+        config: Config<Spi>,
     ) -> Self {
         init_pin!(spi_rstb, AfType::new(Pull::Down));
         Self::new_qspi(
@@ -355,22 +389,7 @@ impl<'d, T: Instance> Lcdc<'d, T> {
         regs.spi_if_conf().modify(|w| w.set_clk_div(clk_div));
     }
 
-    /// Reset the LCD via the dedicated reset pin (hardware reset).
-    /// This matches C code `HAL_LCDC_ResetLCD` which toggles `LCD_RSTB` pin.
-    pub async fn reset_lcd(&mut self) {
-        let regs = T::regs();
-
-        // Assert reset (Active Low)
-        regs.lcd_if_conf().modify(|w| w.set_lcd_rstb(false));
-        Timer::after(Duration::from_micros(
-            self.config.reset_lcd_interval_us as u64,
-        ))
-        .await;
-        // Release reset
-        regs.lcd_if_conf().modify(|w| w.set_lcd_rstb(true));
-    }
-
-    /// Initialize the LCDC peripheral
+    /// Initialize the LCDC peripheral (SPI specific)
     pub fn init(&mut self) {
         let regs = T::regs();
         enable_and_reset::<T>();
@@ -380,15 +399,13 @@ impl<'d, T: Instance> Lcdc<'d, T> {
         let lcd_format =
             self.config
                 .out_color_format
-                .to_lcd_format(InterfaceType::from_lcd_interface(
-                    self.config.display_interface,
-                ));
+                .to_lcd_format(InterfaceType::Spi);
 
         let spi_lcd_format = self.config.out_color_format.to_spi_lcd_format();
 
         // Configure LCD Interface (LCD_CONF)
         regs.lcd_conf().modify(|w| {
-            w.set_lcd_intf_sel(LcdIntfSel::Spi);
+            w.set_lcd_intf_sel(Spi::SELECTOR);
             w.set_target_lcd(TargetLcd::LcdPanel0);
             w.set_lcd_format(lcd_format);
 
@@ -396,16 +413,17 @@ impl<'d, T: Instance> Lcdc<'d, T> {
         });
 
         // Configure SPI Interface (SPI_IF_CONF)
+        let spi_conf = &self.config.interface_config;
         regs.spi_if_conf().modify(|w| {
-            w.set_line(self.config.spi.line_mode);
-            w.set_spi_cs_pol(self.config.spi.cs_polarity);
-            w.set_spi_clk_pol(self.config.spi.clk_polarity);
-            w.set_spi_clk_init(self.config.spi.clk_phase);
+            w.set_line(spi_conf.line_mode);
+            w.set_spi_cs_pol(spi_conf.cs_polarity);
+            w.set_spi_clk_pol(spi_conf.clk_polarity);
+            w.set_spi_clk_init(spi_conf.clk_phase);
             w.set_spi_clk_auto_dis(true); // Disable CLK when idle
             w.set_spi_cs_no_idle(true); // Keep CS active during transaction
             w.set_dummy_cycle(0);
         });
-        self.set_spi_frequency(self.config.spi.write_frequency);
+        self.set_spi_frequency(spi_conf.write_frequency);
 
         // Configure Tearing Effect (TE) - Disabled for now
         regs.te_conf().write(|w| w.set_enable(false));
@@ -414,30 +432,7 @@ impl<'d, T: Instance> Lcdc<'d, T> {
         regs.lcd_if_conf().modify(|w| w.set_lcd_rstb(true));
     }
 
-    /// Helper: Wait for the Single Access (Command/Param) interface to be ready.
-    /// Uses a blocking wait with timeout since command transmission is very fast.
-    fn wait_single_busy(&self) -> Result<(), Error> {
-        let regs = T::regs();
-
-        blocking_wait_timeout_ms(|| regs.lcd_single().read().lcd_busy(), 100)
-            .map_err(|_| Error::Timeout)
-    }
-
-    /// Helper: Wait for the interface to be ready.
-    /// Checks STATUS.lcd_busy and LCD_SINGLE.lcd_busy.
-    fn wait_busy(&self) -> Result<(), Error> {
-        let regs = T::regs();
-        blocking_wait_timeout_ms(
-            || regs.status().read().lcd_busy() || regs.lcd_single().read().lcd_busy(),
-            100,
-        )
-        .map_err(|_| Error::Timeout)
-    }
-
     /// Send a command to the LCD via SPI.
-    ///
-    /// This is blocking because SPI commands are short.
-    /// Checks full busy status before starting.
     pub fn send_cmd(&mut self, cmd: u32, len_bytes: u8, continuous: bool) -> Result<(), Error> {
         if len_bytes == 0 || len_bytes > 4 {
             return Err(Error::InvalidParameter);
@@ -475,8 +470,6 @@ impl<'d, T: Instance> Lcdc<'d, T> {
     }
 
     /// Send data parameter to the LCD via SPI.
-    ///
-    /// This is blocking, used for sending parameters immediately after a command.
     pub fn send_cmd_data(&mut self, data: u32, len_bytes: u8, continuous: bool) -> Result<(), Error> {
         if len_bytes == 0 || len_bytes > 4 {
             return Err(Error::InvalidParameter);
@@ -507,34 +500,6 @@ impl<'d, T: Instance> Lcdc<'d, T> {
         });
 
         Ok(())
-    }
-
-    /// Waits asynchronously for the pixel transfer to complete using interrupts.
-    async fn wait_for_transfer_completion(&mut self) -> Result<(), Error> {
-        let regs = T::regs();
-        
-        poll_fn(move |cx| {
-            WAKER.register(cx.waker());
-            
-            // Check for Errors by reading raw status
-            // Note: We didn't clear them in ISR, so they persist
-            let irq = regs.irq().read();
-            if irq.dpi_udr_raw_stat() {
-                return Poll::Ready(Err(Error::DpiUnderflow));
-            }
-            if irq.icb_of_raw_stat() {
-                return Poll::Ready(Err(Error::LayerOverflow));
-            }
-
-            // Check if EOF interrupt is masked/disabled
-            // This indicates the ISR has run and disabled the interrupt
-            if !regs.setting().read().eof_mask() {
-                 return Poll::Ready(Ok(()));
-            }
-
-            Poll::Pending
-        })
-        .await
     }
 
     /// Send pixel data (framebuffer) asynchronously.
@@ -599,6 +564,7 @@ impl<'d, T: Instance> Lcdc<'d, T> {
             w.set_y1(y1);
         });
 
+        // SPI Specific: Enable Auto CS Disable
         regs.spi_if_conf().modify(|w| {
             w.set_spi_cs_auto_dis(true);
         });
@@ -618,8 +584,6 @@ impl<'d, T: Instance> Lcdc<'d, T> {
         });
 
         // Enable/Unmask Interrupts
-        // set_eof_mask(true) enables the EOF interrupt.
-        // We also enable error interrupts to ensure we catch them.
         regs.setting().modify(|w| {
             w.set_eof_mask(true);
             w.set_dpi_udr_mask(true);
@@ -632,13 +596,6 @@ impl<'d, T: Instance> Lcdc<'d, T> {
         regs.command().write(|w| w.set_start(true));
 
         self.wait_for_transfer_completion().await
-    }
-
-    pub async fn send_pixel_data_framebuffer(
-        &mut self,
-        buffer: &[u8],
-    ) -> Result<(), Error> {
-        self.send_pixel_data_rect(self.config.width, self.config.height, buffer).await
     }
 
     pub async fn send_pixel_data_rect(
@@ -670,6 +627,80 @@ impl<'d, T: Instance> Lcdc<'d, T> {
         )
         .await
     }
+
+    pub async fn send_pixel_data_framebuffer(
+        &mut self,
+        buffer: &[u8],
+    ) -> Result<(), Error> 
+    {
+        self.send_pixel_data_rect(self.config.width, self.config.height, buffer).await
+    }
+}
+
+// ============================================================================
+// Shared Implementation (Generic)
+// ============================================================================
+
+impl<'d, T: Instance, I: LcdInterface> Lcdc<'d, T, I> {
+    /// Reset the LCD via the dedicated reset pin (hardware reset).
+    pub async fn reset_lcd(&mut self) {
+        let regs = T::regs();
+
+        // Assert reset (Active Low)
+        regs.lcd_if_conf().modify(|w| w.set_lcd_rstb(false));
+        Timer::after(Duration::from_micros(
+            self.config.reset_lcd_interval_us as u64,
+        ))
+        .await;
+        // Release reset
+        regs.lcd_if_conf().modify(|w| w.set_lcd_rstb(true));
+    }
+
+    /// Helper: Wait for the interface to be ready.
+    /// Checks generic LCD busy status.
+    fn wait_busy(&self) -> Result<(), Error> {
+        let regs = T::regs();
+        blocking_wait_timeout_ms(
+            || regs.status().read().lcd_busy() || regs.lcd_single().read().lcd_busy(),
+            100,
+        )
+        .map_err(|_| Error::Timeout)
+    }
+
+        /// Helper: Wait for the Single Access (Command/Param) interface to be ready.
+    fn wait_single_busy(&self) -> Result<(), Error> {
+        let regs = T::regs();
+
+        blocking_wait_timeout_ms(|| regs.lcd_single().read().lcd_busy(), 100)
+            .map_err(|_| Error::Timeout)
+    }
+
+    /// Waits asynchronously for the pixel transfer to complete using interrupts.
+    /// This relies on generic status flags (EOF), so it's kept in the generic block.
+    async fn wait_for_transfer_completion(&mut self) -> Result<(), Error> {
+        let regs = T::regs();
+        
+        poll_fn(move |cx| {
+            WAKER.register(cx.waker());
+            
+            // Check for Errors by reading raw status
+            let irq = regs.irq().read();
+            if irq.dpi_udr_raw_stat() {
+                return Poll::Ready(Err(Error::DpiUnderflow));
+            }
+            if irq.icb_of_raw_stat() {
+                return Poll::Ready(Err(Error::LayerOverflow));
+            }
+
+            // Check if EOF interrupt is masked/disabled (ISR signal)
+            if !regs.setting().read().eof_mask() {
+                 return Poll::Ready(Ok(()));
+            }
+
+            Poll::Pending
+        })
+        .await
+    }
 }
 
 /// Errors that can occur during LCD operations
@@ -683,6 +714,7 @@ pub enum Error {
     /// Buffer Overflow Error
     LayerOverflow,
 }
+
 // ============================================================================
 // Trait Definitions
 // ============================================================================
@@ -717,11 +749,10 @@ impl Instance for peripherals::LCDC1 {
 }
 
 // ============================================================================
-// Trait Implementations
+// DisplayBus Implementation
 // ============================================================================
 
-
-impl<'d, T: Instance> DisplayBus for Lcdc<'d, T> {
+impl<'d, T: Instance> DisplayBus for Lcdc<'d, T, Spi> {
     type Error = Error;
     
     async fn write_cmds(&mut self, cmd: &[u8]) -> Result<(), Self::Error> {
@@ -763,6 +794,7 @@ impl<'d, T: Instance> DisplayBus for Lcdc<'d, T> {
     
     async fn write_pixels(&mut self, cmd: &[u8], params: &[u8], buffer: &[u8], metadata: display_bus::Metadata) -> Result<(), DisplayError<Self::Error>> {
         if params.len() > 0 {
+            // Parameter support with pixel data is not yet implemented
             todo!()
         }
         

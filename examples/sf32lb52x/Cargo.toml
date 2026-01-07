@@ -26,3 +26,12 @@ defmt-rtt = "1"
 heapless = "0.9"
 static_cell = "2.1.1"
 portable-atomic = "1.11.1"
+
+# USB dependencies
+embassy-usb = { version="0.5", features = ["defmt"] }
+usbd-hid = { version="0.8", features = ["defmt"] }
+
+# Display dependencies
+embedded-graphics = { version = "0.8", features = ["defmt"] }
+display-driver = { git = "https://github.com/decaday/display-driver" }
+dd-co5300 = { git = "https://github.com/decaday/display-driver" }
