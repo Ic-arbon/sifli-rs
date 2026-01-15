@@ -7,6 +7,8 @@ use panic_probe as _;
 
 use embassy_executor::Spawner;
 use embassy_time::{Delay, Timer};
+use sifli_hal::lcdc::SpiConfig;
+use sifli_hal::time::mhz;
 use static_cell::StaticCell;
 
 use sifli_hal::{gpio, lcdc, rcc};
@@ -23,23 +25,24 @@ use embedded_graphics::{
 };
 
 // Import the display driver modules
-use display_driver::ColorFormat;
-use display_driver::display_bus::QspiFlashBus;
-use dd_co5300::{Co5300, spec::DisplaySpec};
-use display_driver::panel::{LCDResetOption, Panel};
-
-// --- Constants & Types ---
+use display_driver::{ColorFormat, DisplayDriver};
+use display_driver::bus::QspiFlashBus;
+use dd_co5300::{Co5300, spec::{DisplaySpec, DisplaySize}};
+use display_driver::panel::Panel;
+use display_driver::panel::reset::LCDResetOption;
 
 const WIDTH: usize = 240;
 const HEIGHT: usize = 240;
 
-/// Board-specific display specification
 pub struct MyCo5300;
-impl DisplaySpec for MyCo5300 {
+impl DisplaySize for MyCo5300 {
     const WIDTH: u16 = WIDTH as u16;
     const HEIGHT: u16 = HEIGHT as u16;
     const COL_OFFSET: u16 = 0;
     const ROW_OFFSET: u16 = 0;
+}
+
+impl DisplaySpec for MyCo5300 {
     const INIT_PAGE_PARAM: u8 = 0x20; 
     const IGNORE_ID_CHECK: bool = false;
 }
@@ -83,15 +86,19 @@ async fn main(_spawner: Spawner) {
     let config = sifli_hal::lcdc::Config { 
         width: WIDTH as u16, 
         height: HEIGHT as u16,
+        interface_config: SpiConfig {
+            line_mode: lcdc::SpiLineMode::FourLine4Data,
+            write_frequency: lcdc::FrequencyConfig::Freq(mhz(50)),
+            ..Default::default()
+        },
         ..Default::default() 
     };
     
-    let mut lcdc = lcdc::Lcdc::new_qspi(
+    let lcdc = lcdc::Lcdc::new_qspi(
         p.LCDC1, Irqs,
         p.PA2, p.PA3, p.PA4, p.PA5, p.PA6, p.PA7, p.PA8,
         config
     );
-    lcdc.init();
     
     // Wrap the raw bus in the QspiFlashBus protocol layer (handles 0x02/0x32 prefixes)
     let mut disp_bus = QspiFlashBus::new(lcdc);
@@ -102,12 +109,13 @@ async fn main(_spawner: Spawner) {
     // Initialize the CO5300 panel driver
     let mut panel = Co5300::<MyCo5300, _, _>::new(LCDResetOption::new_pin(rst));
 
-
     info!("Initializing Display...");
     // The panel init sequence handles reset and configuration
     panel.init(&mut disp_bus, &mut Delay).await.unwrap();
     panel.set_color_format(&mut disp_bus, ColorFormat::RGB565).await.unwrap();
     panel.set_brightness(&mut disp_bus, 255).await.unwrap();
+
+    let mut display = DisplayDriver::new(disp_bus, panel);
 
     // Enable backlight
     bl.set_low();
@@ -133,11 +141,11 @@ async fn main(_spawner: Spawner) {
 
     // Draw text
     let style = MonoTextStyle::new(&FONT_10X20, Rgb565::BLACK);
-    Text::new("Hello SF32!", Point::new(50, 50), style)
+    Text::new("Hello SF32!", Point::new(60, 50), style)
         .draw(fb)
         .unwrap();
 
-    Text::new("SiFli-rs!", Point::new(50, 80), style)
+    Text::new("Powerd by SiFli-rs", Point::new(20, 180), style)
         .draw(fb)
         .unwrap();
 
@@ -147,16 +155,9 @@ async fn main(_spawner: Spawner) {
     loop {
         info!("Sending Frame ...");
         // Update the display with the new frame
-        panel.write_pixels(
-            &mut disp_bus,
-            0, 
-            0, 
-            WIDTH as u16 - 1, 
-            HEIGHT as u16 - 1, 
-            fb.data()
-        ).await.unwrap();
+        display.write_frame(fb.data()).await.unwrap();
 
         info!("Frame Finished");
-        Timer::after_secs(5).await;
+        Timer::after_secs(3).await;
     }
 }

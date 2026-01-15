@@ -3,8 +3,8 @@ use core::marker::PhantomData;
 use core::sync::atomic::{compiler_fence, Ordering};
 use core::task::Poll;
 
-use display_driver::{DisplayError, display_bus};
-use display_driver::display_bus::DisplayBus;
+use display_driver::{DisplayBus, DisplayError};
+
 use embassy_hal_internal::{into_ref, Peripheral};
 use embassy_sync::waitqueue::AtomicWaker;
 use embassy_time::{Duration, Timer};
@@ -20,7 +20,7 @@ use crate::{interrupt, peripherals};
 
 pub use vals::{
     AlphaSel, LayerFormat, LcdFormat, LcdIntfSel, Polarity, SingleAccessType, SpiAccessLen,
-    SpiClkInit, SpiClkPol, SpiLcdFormat, SpiLineMode, SpiRdMode, TargetLcd,
+    SpiClkInit as SpiClkPhase, SpiClkPol, SpiLcdFormat, SpiLineMode, SpiRdMode, TargetLcd,
 };
 pub use vals::LcdIntfSel as LcdInterfaceSelector;
 
@@ -138,6 +138,29 @@ pub enum OutputColorFormat {
     Rgb888,
 }
 
+impl OutputColorFormat {
+    pub fn to_lcd_format(&self, interface: InterfaceType) -> LcdFormat {
+        assert!(interface == InterfaceType::Spi);
+        match self {
+            OutputColorFormat::Rgb332 => LcdFormat::Rgb332,
+            OutputColorFormat::Rgb565 => LcdFormat::Rgb565,
+            // OutputColorFormat::Rgb565Swap => LcdFormat::Rgb565,
+            OutputColorFormat::Rgb888 => LcdFormat::Rgb888,
+            _ => panic!(),
+        }
+    }
+
+    pub fn to_spi_lcd_format(&self) -> SpiLcdFormat {
+        match self {
+            OutputColorFormat::Rgb332 => SpiLcdFormat::Rgb332,
+            OutputColorFormat::Rgb565 => SpiLcdFormat::Rgb565,
+            // OutputColorFormat::Rgb565Swap => SpiLcdFormat::Rgb565,
+            OutputColorFormat::Rgb888 => SpiLcdFormat::Rgb888,
+            _ => panic!(),
+        }
+    }
+}
+
 impl InputColorFormat {
     pub fn to_layer_format(&self) -> LayerFormat {
         match self {
@@ -168,29 +191,6 @@ impl InputColorFormat {
     }
 }
 
-impl OutputColorFormat {
-    pub fn to_lcd_format(&self, interface: InterfaceType) -> LcdFormat {
-        assert!(interface == InterfaceType::Spi);
-        match self {
-            OutputColorFormat::Rgb332 => LcdFormat::Rgb332,
-            OutputColorFormat::Rgb565 => LcdFormat::Rgb565,
-            // OutputColorFormat::Rgb565Swap => LcdFormat::Rgb565,
-            OutputColorFormat::Rgb888 => LcdFormat::Rgb888,
-            _ => panic!(),
-        }
-    }
-
-    pub fn to_spi_lcd_format(&self) -> SpiLcdFormat {
-        match self {
-            OutputColorFormat::Rgb332 => SpiLcdFormat::Rgb332,
-            OutputColorFormat::Rgb565 => SpiLcdFormat::Rgb565,
-            // OutputColorFormat::Rgb565Swap => SpiLcdFormat::Rgb565,
-            OutputColorFormat::Rgb888 => SpiLcdFormat::Rgb888,
-            _ => panic!(),
-        }
-    }
-}
-
 // ============================================================================
 // Configuration
 // ============================================================================
@@ -211,7 +211,7 @@ pub struct SpiConfig {
     /// SPI clock polarity (CPOL)
     pub clk_polarity: SpiClkPol,
     /// SPI clock phase (CPHA)
-    pub clk_phase: SpiClkInit,
+    pub clk_phase: SpiClkPhase,
     /// Chip select polarity
     pub cs_polarity: Polarity,
     /// VSYNC signal polarity (used for TE)
@@ -227,7 +227,7 @@ impl Default for SpiConfig {
         Self {
             line_mode: SpiLineMode::FourLine4Data,
             clk_polarity: SpiClkPol::Normal,
-            clk_phase: SpiClkInit::Low,
+            clk_phase: SpiClkPhase::Low,
             cs_polarity: Polarity::ActiveLow,
             vsyn_polarity: Polarity::ActiveLow,
             write_frequency: FrequencyConfig::Freq(Hertz::mhz(10)), // 10 MHz
@@ -344,11 +344,13 @@ impl<'d, T: Instance> Lcdc<'d, T, Spi> {
             T::Interrupt::enable();
         }
 
-        Self {
+        let mut slf = Self {
             _peri: peri,
             config,
             _phantom: PhantomData,
-        }
+        };
+        slf.init();
+        slf
     }
 
     pub fn new_qspi_with_rstb(
@@ -510,11 +512,11 @@ impl<'d, T: Instance> Lcdc<'d, T, Spi> {
     /// for the End-Of-Frame (EOF) flag to allow for fast verification without complex interrupt handling.
     pub async fn send_pixel_data(
         &mut self,
-        buffer: &[u8],
         x0: u16,
         y0: u16,
         x1: u16,
         y1: u16,
+        buffer: &[u8],
     ) -> Result<(), Error> {
         debug_assert!(
             buffer.as_ptr() as usize % 4 == 0,
@@ -619,11 +621,11 @@ impl<'d, T: Instance> Lcdc<'d, T, Spi> {
         }
 
         self.send_pixel_data(
-            buffer,
             0,
             0,
             width - 1,
             height - 1,
+            buffer,
         )
         .await
     }
@@ -644,16 +646,19 @@ impl<'d, T: Instance> Lcdc<'d, T, Spi> {
 impl<'d, T: Instance, I: LcdInterface> Lcdc<'d, T, I> {
     /// Reset the LCD via the dedicated reset pin (hardware reset).
     pub async fn reset_lcd(&mut self) {
-        let regs = T::regs();
-
-        // Assert reset (Active Low)
-        regs.lcd_if_conf().modify(|w| w.set_lcd_rstb(false));
+       self.set_lcd_reset(true);
         Timer::after(Duration::from_micros(
             self.config.reset_lcd_interval_us as u64,
         ))
         .await;
         // Release reset
-        regs.lcd_if_conf().modify(|w| w.set_lcd_rstb(true));
+        self.set_lcd_reset(false);
+    }
+
+    /// Reset the LCD via the dedicated reset pin (hardware reset).
+    pub fn set_lcd_reset(&mut self, reset: bool) {
+        // 0 for reset, 1 for IDLE
+        T::regs().lcd_if_conf().modify(|w| w.set_lcd_rstb(!reset));
     }
 
     /// Helper: Wait for the interface to be ready.
@@ -792,21 +797,30 @@ impl<'d, T: Instance> DisplayBus for Lcdc<'d, T, Spi> {
         }
     }
     
-    async fn write_pixels(&mut self, cmd: &[u8], params: &[u8], buffer: &[u8], metadata: display_bus::Metadata) -> Result<(), DisplayError<Self::Error>> {
-        if params.len() > 0 {
-            // Parameter support with pixel data is not yet implemented
-            todo!()
-        }
-        
+    async fn write_pixels(&mut self, cmd: &[u8], data: &[u8], metadata: display_driver::Metadata) -> Result<(), DisplayError<Self::Error>> {
         if cmd.is_empty() || cmd.len() > 4 {
             return Err(DisplayError::BusError(Error::InvalidParameter));
         }
+
+        let area = metadata.area.unwrap();
         
         let cmd_word = cmd.iter()
             .fold(0u32, |acc, &byte| (acc << 8) | (byte as u32));
         
         self.send_cmd(cmd_word, cmd.len() as u8, true).map_err(DisplayError::BusError)?;
 
-        self.send_pixel_data_rect(metadata.width, metadata.height, buffer).await.map_err(DisplayError::BusError)
+        let (x1, y1) = area.bottom_right();
+        self.send_pixel_data(area.x, area.y, x1, y1, data).await.map_err(DisplayError::BusError)
+    }
+
+    fn set_reset(&mut self, reset: bool) -> Result<(), DisplayError<Self::Error>> {
+        self.set_lcd_reset(reset);
+        Ok(())
     }
 }
+
+// impl<'d, T: Instance> BusAutoFill for Lcdc<'d, T, Spi> {
+//     async fn fill_solid(&mut self, cmd: &[u8], color: display_driver::SingleColor, metadata: display_driver::Metadata) -> Result<(), DisplayError<Self::Error>> {
+//         todo!("Use Canvas to auto fill")
+//     }
+// }
