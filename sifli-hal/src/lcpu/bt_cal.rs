@@ -1,15 +1,22 @@
-//! LCPU-side Bluetooth RF calibration helper.
+//! LCPU-side Bluetooth RF calibration.
 //!
-//! This implements the minimum necessary subset of SDK `bt_rf_cal`, used for:
+//! This module implements the complete RF calibration flow from SDK `bt_rf_cal()`:
 //! - Resetting Bluetooth RF module via LPSYS_RCC
+//! - RFC initialization and command sequence generation
+//! - VCO calibration (ACAL/FCAL for 5G and 3G)
+//! - TXDC calibration
+//! - Optimization calibration (PA/PHY configuration)
 //! - Writing BT transmit power parameters to LCPU ROM configuration area
 //!
-//! The complete analog RF self-calibration algorithms (VCO / TXDC / IQ etc., see
-//! `SiFli-SDK/drivers/cmsis/sf32lb52x/bt_rf_fulcal.c`) are not yet ported.
+//! Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/bt_rf_fulcal.c`
 
+use super::bt_rf;
 use super::ram;
 use crate::rcc::{lp_rfc_reset_asserted, set_lp_rfc_reset};
 use crate::syscfg::ChipRevision;
+
+#[allow(unused_imports)]
+pub use bt_rf::{EdrMode, RfCalConfig};
 
 /// Reset Bluetooth RF module.
 ///
@@ -23,48 +30,79 @@ fn reset_bluetooth_rf() {
     set_lp_rfc_reset(false);
 }
 
-/// Default BT RF power parameters.
-///
-/// Weak default implementation corresponding to `bt_rf_get_max_tx_pwr` / `bt_rf_get_min_tx_pwr` /
-/// `bt_rf_get_init_tx_pwr` and `bt_is_in_BQB_mode` in SDK.
-fn default_tx_power_params() -> (i8, i8, i8, u8) {
-    let max_pwr: i8 = 10;
-    let init_pwr: i8 = 0;
-    let min_pwr: i8 = 0;
-    let is_bqb: u8 = 0;
-    (max_pwr, min_pwr, init_pwr, is_bqb)
-}
-
 /// Encode power parameters into 32-bit packed format.
 ///
 /// Equivalent to `RF_PWR_PARA` macro in SDK:
 /// `(is_bqb << 24) | (init << 16) | (min << 8) | (int8_t)(max)`.
-fn encode_tx_power(max: i8, min: i8, init: i8, is_bqb: u8) -> u32 {
+fn encode_tx_power(max: i8, min: i8, init: i8, is_bqb: bool) -> u32 {
     let max_u = max as u8 as u32;
     let min_u = min as u8 as u32;
     let init_u = init as u8 as u32;
-    let is_bqb_u = is_bqb as u32;
+    let is_bqb_u = if is_bqb { 1u32 } else { 0u32 };
 
     (is_bqb_u << 24) | (init_u << 16) | (min_u << 8) | max_u
 }
 
-/// Perform basic Bluetooth RF "calibration" steps.
+/// Perform Bluetooth RF calibration with default configuration.
 ///
-/// Current implementation:
-/// - Reset Bluetooth RF module;
-/// - Calculate BT TX power encoding based on default parameters;
-/// - Write to `bt_txpwr` field in LCPU ROM configuration area.
-///
-/// Note: This does not perform the complete analog RF self-calibration flow in SDK, only guarantees
-/// configuration fields required for LCPU startup are correctly set.
+/// This is a convenience wrapper for `bt_rf_cal_with_config` using default settings.
+/// The default configuration performs full calibration with:
+/// - Max TX power: 10 dBm
+/// - Min TX power: 0 dBm
+/// - Init TX power: 0 dBm
+/// - EDR mode: 3G
+/// - Full calibration enabled
+#[allow(dead_code)]
 pub fn bt_rf_cal(revision: ChipRevision) {
-    // 1. Reset Bluetooth RF
+    bt_rf_cal_with_config(revision, &RfCalConfig::default());
+}
+
+/// Perform Bluetooth RF calibration with minimal configuration.
+///
+/// This performs only the essential steps (reset + power configuration) without
+/// the complete VCO/TXDC calibration. Use this for faster startup when full
+/// calibration is not required.
+pub fn bt_rf_cal_minimal(revision: ChipRevision) {
+    bt_rf_cal_with_config(revision, &RfCalConfig::minimal());
+}
+
+/// Perform Bluetooth RF calibration with custom configuration.
+///
+/// # Steps
+///
+/// 1. Reset Bluetooth RF module
+/// 2. Initialize RFC (if full calibration enabled)
+/// 3. Perform full calibration: VCO ACAL/FCAL, EDR LO, TXDC (if enabled)
+/// 4. Perform optimization calibration (if full calibration enabled)
+/// 5. Write TX power configuration to LCPU ROM
+///
+/// # Arguments
+///
+/// * `revision` - Chip revision for ROM configuration address selection
+/// * `config` - RF calibration configuration
+pub fn bt_rf_cal_with_config(revision: ChipRevision, config: &RfCalConfig) {
+    // 1. Reset Bluetooth RF module
     reset_bluetooth_rf();
 
-    // 2. Calculate TX power encoding
-    let (max_pwr, min_pwr, init_pwr, is_bqb) = default_tx_power_params();
-    let tx_pwr = encode_tx_power(max_pwr, min_pwr, init_pwr, is_bqb);
+    // 2-4. Perform full calibration if enabled
+    if config.enable_full_cal {
+        // Initialize RFC and get calibration data start address
+        let addr = bt_rf::rfc_init(config.edr_mode);
 
-    // 3. Write to LCPU ROM configuration area (BT_TXPWR)
+        // Perform full calibration (VCO/TXDC)
+        let cal_power_mask = config.cal_power_mask();
+        bt_rf::ful_cal(addr, config.edr_mode, cal_power_mask);
+
+        // Perform optimization calibration
+        bt_rf::opt_cal(config.edr_mode);
+    }
+
+    // 5. Write TX power configuration to LCPU ROM
+    let tx_pwr = encode_tx_power(
+        config.max_tx_power,
+        config.min_tx_power,
+        config.init_tx_power,
+        config.is_bqb_mode,
+    );
     ram::set_bt_tx_power(revision, tx_pwr);
 }

@@ -15,7 +15,12 @@
 pub mod ram;
 pub use ram::LpsysRam;
 
+// Bluetooth RF calibration modules
 mod bt_cal;
+pub mod bt_rf;
+
+// Re-export RF calibration configuration
+pub use bt_rf::RfCalConfig;
 
 use core::fmt;
 
@@ -55,7 +60,15 @@ pub struct LcpuConfig {
     pub skip_frequency_check: bool,
 
     /// Disable RF calibration (normally runs after patch installation).
+    ///
+    /// When `false`, RF calibration is performed using `rf_cal_config`.
+    /// When `true`, only basic reset is performed (faster startup).
     pub disable_rf_cal: bool,
+
+    /// RF calibration configuration.
+    ///
+    /// This is only used when `disable_rf_cal` is `false`.
+    pub rf_cal_config: RfCalConfig,
 }
 
 impl LcpuConfig {
@@ -72,6 +85,7 @@ impl LcpuConfig {
             patch_letter: None,
             skip_frequency_check: false,
             disable_rf_cal: false,
+            rf_cal_config: RfCalConfig::minimal(),
         }
     }
 }
@@ -92,7 +106,9 @@ impl Default for LcpuConfig {
                 list: sf32lb52x_lcpu_data::SF32LB52X_LCPU_PATCH_LETTER_LIST,
                 bin: sf32lb52x_lcpu_data::SF32LB52X_LCPU_PATCH_LETTER_BIN,
             });
-            cfg.disable_rf_cal = true;
+            // Enable full RF calibration by default
+            cfg.disable_rf_cal = false;
+            cfg.rf_cal_config = RfCalConfig::default();
         }
 
         cfg
@@ -380,13 +396,16 @@ fn install_patch_and_calibrate(
     }
 
     if !config.disable_rf_cal {
-        debug!("Performing RF calibration");
+        debug!(
+            "Performing RF calibration with config: {:?}",
+            config.rf_cal_config
+        );
 
         // Reference SDK `lcpu_ble_patch_install`, perform BT RF calibration after patch installation.
-        // Here only the minimum necessary subset is implemented: reset RFC and write BT_TXPWR configuration.
-        crate::lcpu::bt_cal::bt_rf_cal(revision);
+        bt_cal::bt_rf_cal_with_config(revision, &config.rf_cal_config);
     } else {
-        warn!("RF calibration disabled by config");
+        debug!("RF calibration disabled, performing minimal reset");
+        bt_cal::bt_rf_cal_minimal(revision);
     }
 
     Ok(())
