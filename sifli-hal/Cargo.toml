@@ -51,11 +51,13 @@ embedded-hal-1 = { package = "embedded-hal", version = "1.0" }
 embedded-hal-async = { version = "1.0" }
 embedded-hal-nb = { version = "1.0" }
 
-embedded-io = { version = "0.6.1" }
-embedded-io-async = { version = "0.6.1" }
+embedded-io = { version = "0.7" }
+embedded-io-async = { version = "0.7" }
 embedded-storage = { version = "0.3" }
 embedded-storage-async = { version = "0.4.1" }
 portable-atomic = { version = "1.11.1", features = ["require-cas"] }
+
+bt-hci = { version = "0.7", optional = true }
 
 [build-dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -92,7 +94,10 @@ usb = ["musb"]
 unstable-pac = []
 
 sf32lb52x = ["sifli-pac/sf32lb52x", "musb?/builtin-sf32lb52x"]
-sf32lb52x-lcpu = ["sf32lb52x"]
+sf32lb52x-lcpu = ["sf32lb52x", "bt-hci"]
+
+## Enable bt-hci transport layer for IPC HCI communication
+bt-hci = ["dep:bt-hci", "sf32lb52x"]
 
 time-driver-atim1 = ["_time-driver-atim"]
 time-driver-gptim1 = ["_time-driver-gptim"]
@@ -108,3 +113,4 @@ unchecked-overclocking = []
 
 [package.metadata.docs.rs]
 default-target = "thumbv8m.main-none-eabihf"
+
