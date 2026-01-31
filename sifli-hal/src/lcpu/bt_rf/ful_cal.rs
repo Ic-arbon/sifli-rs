@@ -321,13 +321,13 @@ fn lo_cal(rslt_start_addr: usize) -> usize {
             p1 = residual_cnt;
             error1 = residual_cnt - RESIDUAL_CNT_VTH;
             capcode1 = fcal_cnt;
-            fcal_cnt = fcal_cnt.saturating_add(fcal_cnt_fs >> i);
+            fcal_cnt = fcal_cnt.saturating_add(fcal_cnt_fs.wrapping_shr(i));
         } else {
             idac0 = acal_cnt;
             p0 = residual_cnt;
             error0 = RESIDUAL_CNT_VTH - residual_cnt;
             capcode0 = fcal_cnt;
-            fcal_cnt = fcal_cnt.saturating_sub(fcal_cnt_fs >> i);
+            fcal_cnt = fcal_cnt.saturating_sub(fcal_cnt_fs.wrapping_shr(i));
         }
 
         rfc_clear(FBDV_REG1, BRF_FKCAL_CNT_EN_LV);
