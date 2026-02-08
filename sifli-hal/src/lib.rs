@@ -151,6 +151,24 @@ pub fn blocking_delay_us(us: u32) {
     cortex_m_blocking_delay_us(us);
 }
 
+/// Converts a address to a System Bus address.
+/// `HCPU_MPI_SBUS_ADDR``
+pub fn to_system_bus_addr(addr: usize) -> usize {
+    match addr {
+        0x1000_0000..0x2000_0000 => addr + 0x5000_0000,
+        _ => addr,
+    }
+}
+
+/// Converts a address to a Code Bus address.
+/// `HCPU_MPI_CBUS_ADDR``
+pub fn to_code_bus_addr(addr: usize) -> usize {
+    match addr {
+        0x6000_0000..0x7000_0000 => addr - 0x5000_0000,
+        _ => addr,
+    }
+}
+
 /// Macro to bind interrupts to handlers.
 ///
 /// This defines the right interrupt handlers, and creates a unit struct (like `struct Irqs;`)
