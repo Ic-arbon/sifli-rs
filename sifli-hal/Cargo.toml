@@ -12,7 +12,7 @@ readme = "README.md"
 license = "Apache-2.0"
 
 [dependencies]
-# sifli-pac = { version = "0.1.0", path = "../../sifli-pac" }
+# sifli-pac = { version = "0.2.0", path = "../../sifli-pac" }
 sifli-pac = { version = "0.2.0", git = "https://github.com/OpenSiFli/sifli-pac" }
 
 embassy-sync = { version = "0.7" }
@@ -47,8 +47,7 @@ embedded-io-async = { version = "0.6.1" }
 embedded-storage = { version = "0.3" }
 embedded-storage-async = { version = "0.4.1" }
 portable-atomic = { version = "1.11.1", features = ["require-cas"] }
-display-interface = "0.5.0"
-display-driver = { git = "https://github.com/decaday/display-driver" }
+display-driver = { version = "0.1.0" }
 
 [build-dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -71,7 +70,6 @@ defmt = ["dep:defmt",
     "sifli-pac/defmt",
     "embassy-hal-internal/defmt",
     "musb?/defmt",
-    "display-interface/defmt-03"
 ]
 
 log = ["dep:log"]

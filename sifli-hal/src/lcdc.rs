@@ -3,6 +3,7 @@ use core::marker::PhantomData;
 use core::sync::atomic::{compiler_fence, Ordering};
 use core::task::Poll;
 
+use display_driver::bus::ErrorType;
 use display_driver::{DisplayBus, DisplayError};
 
 use embassy_hal_internal::{into_ref, Peripheral};
@@ -757,10 +758,12 @@ impl Instance for peripherals::LCDC1 {
 // DisplayBus Implementation
 // ============================================================================
 
-impl<'d, T: Instance> DisplayBus for Lcdc<'d, T, Spi> {
+impl <'d, T: Instance> ErrorType for Lcdc<'d, T, Spi> {
     type Error = Error;
-    
-    async fn write_cmds(&mut self, cmd: &[u8]) -> Result<(), Self::Error> {
+}
+
+impl<'d, T: Instance> DisplayBus for Lcdc<'d, T, Spi> {
+    async fn write_cmd(&mut self, cmd: &[u8]) -> Result<(), Self::Error> {
         if cmd.is_empty() || cmd.len() > 4 {
             return Err(Error::InvalidParameter);
         }
@@ -819,8 +822,8 @@ impl<'d, T: Instance> DisplayBus for Lcdc<'d, T, Spi> {
     }
 }
 
-// impl<'d, T: Instance> BusAutoFill for Lcdc<'d, T, Spi> {
-//     async fn fill_solid(&mut self, cmd: &[u8], color: display_driver::SingleColor, metadata: display_driver::Metadata) -> Result<(), DisplayError<Self::Error>> {
-//         todo!("Use Canvas to auto fill")
+// impl<'d, T: Instance> BusHardwareFill for Lcdc<'d, T, Spi> {
+//     async fn fill_solid(&mut self, cmd: &[u8], color: display_driver::SingleColor, area: display_driver::Area) -> Result<(), DisplayError<Self::Error>> {
+//         todo!("Use Canvas to fill")
 //     }
 // }

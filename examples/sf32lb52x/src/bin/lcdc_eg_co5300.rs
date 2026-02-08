@@ -27,22 +27,22 @@ use embedded_graphics::{
 // Import the display driver modules
 use display_driver::{ColorFormat, DisplayDriver};
 use display_driver::bus::QspiFlashBus;
-use dd_co5300::{Co5300, spec::{DisplaySpec, DisplaySize}};
-use display_driver::panel::Panel;
+use display_driver_co5300::{Co5300, spec::{PanelSpec, Co5300Spec}};
 use display_driver::panel::reset::LCDResetOption;
 
 const WIDTH: usize = 240;
-const HEIGHT: usize = 240;
+const HEIGHT: usize = 240;  
 
 pub struct MyCo5300;
-impl DisplaySize for MyCo5300 {
-    const WIDTH: u16 = WIDTH as u16;
-    const HEIGHT: u16 = HEIGHT as u16;
-    const COL_OFFSET: u16 = 0;
-    const ROW_OFFSET: u16 = 0;
+impl PanelSpec for MyCo5300 {
+    const PHYSICAL_WIDTH: u16 = WIDTH as u16;
+    const PHYSICAL_HEIGHT: u16 = HEIGHT as u16;
+
+    const PHYSICAL_X_OFFSET: u16 = 0;
+    const PHYSICAL_Y_OFFSET: u16 = 0;
 }
 
-impl DisplaySpec for MyCo5300 {
+impl Co5300Spec for MyCo5300 {
     const INIT_PAGE_PARAM: u8 = 0x20; 
     const IGNORE_ID_CHECK: bool = false;
 }
@@ -101,21 +101,20 @@ async fn main(_spawner: Spawner) {
     );
     
     // Wrap the raw bus in the QspiFlashBus protocol layer (handles 0x02/0x32 prefixes)
-    let mut disp_bus = QspiFlashBus::new(lcdc);
+    let disp_bus = QspiFlashBus::new(lcdc);
 
     let rst = gpio::Output::new(p.PA0, gpio::Level::Low);
     let mut bl = gpio::Output::new(p.PA1, gpio::Level::Low);
 
     // Initialize the CO5300 panel driver
-    let mut panel = Co5300::<MyCo5300, _, _>::new(LCDResetOption::new_pin(rst));
+    let panel = Co5300::<MyCo5300, _, _>::new(LCDResetOption::new_pin(rst));
 
     info!("Initializing Display...");
-    // The panel init sequence handles reset and configuration
-    panel.init(&mut disp_bus, &mut Delay).await.unwrap();
-    panel.set_color_format(&mut disp_bus, ColorFormat::RGB565).await.unwrap();
-    panel.set_brightness(&mut disp_bus, 255).await.unwrap();
+    let mut display = DisplayDriver::builder(disp_bus, panel)
+        .with_color_format(ColorFormat::RGB565)
+        .init(&mut Delay).await.unwrap();
 
-    let mut display = DisplayDriver::new(disp_bus, panel);
+    display.set_brightness(200).await.unwrap();
 
     // Enable backlight
     bl.set_low();

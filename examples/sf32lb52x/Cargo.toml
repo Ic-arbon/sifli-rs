@@ -33,5 +33,5 @@ usbd-hid = { version="0.8", features = ["defmt"] }
 
 # Display dependencies
 embedded-graphics = { version = "0.8", features = ["defmt"] }
-display-driver = { git = "https://github.com/decaday/display-driver" }
-dd-co5300 = { git = "https://github.com/decaday/display-driver" }
+display-driver = { version = "0.1.0" }
+display-driver-co5300 = { version = "0.1.1"}
