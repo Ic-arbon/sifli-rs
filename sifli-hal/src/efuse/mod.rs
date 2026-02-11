@@ -235,10 +235,7 @@ fn compute_timings(pclk_hz: u32) -> Result<(u8, u8, u16), Error> {
             field: "thrck",
             value: rd_thrck as u32,
         });
-}
-
-#[cfg(test)]
-mod tests;
+    }
 
     // EFUSE_PGM_THPCK_NS = 20
     let pgm_thpck = (20u64 * pclk_hz as u64) / 1_000_000_000u64 + 1;
@@ -266,3 +263,6 @@ mod tests;
 
     Ok((rd_thrck as u8, pgm_thpck as u8, pgm_tckhp as u16))
 }
+
+#[cfg(test)]
+mod tests;
