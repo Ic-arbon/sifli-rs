@@ -4,8 +4,8 @@ use core::marker::PhantomData;
 
 use embassy_hal_internal::Peripheral;
 
-use crate::pac::EFUSEC;
-use crate::{peripherals, rcc};
+use crate::pac::{EFUSEC, PMUC};
+use crate::{blocking_delay_us, peripherals, rcc};
 
 /// EFUSE error.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -17,23 +17,85 @@ pub enum Error {
     PclkTooFast { pclk_hz: u32 },
     /// A timing value does not fit in the EFUSE timing register.
     TimingOutOfRange { field: &'static str, value: u32 },
+    /// Bank index is invalid.
+    InvalidBank { bank: u8 },
+    /// EFUSE read operation timed out.
+    Timeout { bank: u8 },
+}
+
+/// Unique ID (UID) read from EFUSE.
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct Uid {
+    bytes: [u8; 16],
+}
+
+impl Uid {
+    /// Get UID raw bytes.
+    pub fn bytes(&self) -> &[u8; 16] {
+        &self.bytes
+    }
+
+    /// Get UID as 4 little-endian 32-bit words.
+    pub fn words_le(&self) -> [u32; 4] {
+        let b = self.bytes;
+        [
+            u32::from_le_bytes([b[0], b[1], b[2], b[3]]),
+            u32::from_le_bytes([b[4], b[5], b[6], b[7]]),
+            u32::from_le_bytes([b[8], b[9], b[10], b[11]]),
+            u32::from_le_bytes([b[12], b[13], b[14], b[15]]),
+        ]
+    }
+
+    fn from_bank0_words(bank0_words: &[u32; 8]) -> Self {
+        let mut bytes = [0u8; 16];
+        for (i, word) in bank0_words.iter().take(4).enumerate() {
+            bytes[i * 4..(i + 1) * 4].copy_from_slice(&word.to_le_bytes());
+        }
+        Self { bytes }
+    }
 }
 
 /// EFUSE driver.
-///
-/// This is currently a minimal skeleton that only initializes controller timings.
 pub struct Efuse<'d> {
+    bank0_words: [u32; 8],
+    bank1_words: [u32; 8],
+    uid: Uid,
     _phantom: PhantomData<&'d peripherals::EFUSEC>,
 }
 
 impl<'d> Efuse<'d> {
-    /// Create a new EFUSE driver and initialize the controller timing register.
+    /// Create a new EFUSE driver, initialize the controller timing register, and cache the UID
+    /// and bank0/bank1 raw contents in memory.
     pub fn new(_efusec: impl Peripheral<P = peripherals::EFUSEC> + 'd) -> Result<Self, Error> {
         rcc::enable_and_reset::<peripherals::EFUSEC>();
         init_timr()?;
+
+        let bank0_words = read_bank_words(0)?;
+        let bank1_words = read_bank_words(1)?;
+        let uid = Uid::from_bank0_words(&bank0_words);
+
         Ok(Self {
+            bank0_words,
+            bank1_words,
+            uid,
             _phantom: PhantomData,
         })
+    }
+
+    /// Get cached UID.
+    pub fn uid(&self) -> Uid {
+        self.uid
+    }
+
+    /// Get cached raw bank0 words.
+    pub fn bank0_words(&self) -> &[u32; 8] {
+        &self.bank0_words
+    }
+
+    /// Get cached raw bank1 words.
+    pub fn bank1_words(&self) -> &[u32; 8] {
+        &self.bank1_words
     }
 }
 
@@ -54,6 +116,102 @@ fn init_timr() -> Result<(), Error> {
     });
 
     Ok(())
+}
+
+fn read_bank_words(bank: u8) -> Result<[u32; 8], Error> {
+    if bank >= 4 {
+        return Err(Error::InvalidBank { bank });
+    }
+
+    // CSDK (SF32LB52X): temporarily raise HPSYS_VOUT before reading efuse.
+    let org_vout = PMUC.hpsys_vout().read();
+    let mut boosted_vout = org_vout;
+    let mut value = boosted_vout.vout() as u32 + 3;
+    if value > 0xf {
+        value = 0xf;
+    }
+    if value < 0xe {
+        value = 0xe;
+    }
+    boosted_vout.set_vout(value as u8);
+    PMUC.hpsys_vout().write_value(boosted_vout);
+    blocking_delay_us(20);
+
+    // Select bank and start READ.
+    EFUSEC.cr().write(|w| {
+        w.set_banksel(bank);
+        w.set_mode(false);
+        w.set_ie(false);
+    });
+    EFUSEC.cr().modify(|w| w.set_en(true));
+
+    // CSDK timeout heuristic: timeout = size * 8 * 48000 (size in bytes, bank=32 bytes)
+    let timeout = 32u32 * 8 * 48_000;
+    let mut ready = 0u32;
+    while !EFUSEC.sr().read().done() && ready < timeout {
+        ready += 1;
+    }
+
+    // Write 1 to clear DONE.
+    EFUSEC.sr().write(|w| w.set_done(true));
+
+    if ready >= timeout {
+        PMUC.hpsys_vout().write_value(org_vout);
+        return Err(Error::Timeout { bank });
+    }
+
+    let words = read_bank_data_words(bank);
+
+    // Restore HPSYS_VOUT.
+    PMUC.hpsys_vout().write_value(org_vout);
+
+    Ok(words)
+}
+
+fn read_bank_data_words(bank: u8) -> [u32; 8] {
+    match bank {
+        0 => [
+            EFUSEC.bank0_data0().read().data(),
+            EFUSEC.bank0_data1().read().data(),
+            EFUSEC.bank0_data2().read().data(),
+            EFUSEC.bank0_data3().read().data(),
+            EFUSEC.bank0_data4().read().data(),
+            EFUSEC.bank0_data5().read().data(),
+            EFUSEC.bank0_data6().read().data(),
+            EFUSEC.bank0_data7().read().data(),
+        ],
+        1 => [
+            EFUSEC.bank1_data0().read().data(),
+            EFUSEC.bank1_data1().read().data(),
+            EFUSEC.bank1_data2().read().data(),
+            EFUSEC.bank1_data3().read().data(),
+            EFUSEC.bank1_data4().read().data(),
+            EFUSEC.bank1_data5().read().data(),
+            EFUSEC.bank1_data6().read().data(),
+            EFUSEC.bank1_data7().read().data(),
+        ],
+        2 => [
+            EFUSEC.bank2_data0().read().data(),
+            EFUSEC.bank2_data1().read().data(),
+            EFUSEC.bank2_data2().read().data(),
+            EFUSEC.bank2_data3().read().data(),
+            EFUSEC.bank2_data4().read().data(),
+            EFUSEC.bank2_data5().read().data(),
+            EFUSEC.bank2_data6().read().data(),
+            EFUSEC.bank2_data7().read().data(),
+        ],
+        3 => [
+            EFUSEC.bank3_data0().read().data(),
+            EFUSEC.bank3_data1().read().data(),
+            EFUSEC.bank3_data2().read().data(),
+            EFUSEC.bank3_data3().read().data(),
+            EFUSEC.bank3_data4().read().data(),
+            EFUSEC.bank3_data5().read().data(),
+            EFUSEC.bank3_data6().read().data(),
+            EFUSEC.bank3_data7().read().data(),
+        ],
+        _ => unreachable!(),
+    }
 }
 
 fn compute_timings(pclk_hz: u32) -> Result<(u8, u8, u16), Error> {
@@ -94,4 +252,3 @@ fn compute_timings(pclk_hz: u32) -> Result<(u8, u8, u16), Error> {
 
     Ok((rd_thrck as u8, pgm_thpck as u8, pgm_tckhp as u16))
 }
-
