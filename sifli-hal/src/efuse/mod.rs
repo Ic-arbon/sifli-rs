@@ -7,6 +7,9 @@ use embassy_hal_internal::Peripheral;
 use crate::pac::{EFUSEC, PMUC};
 use crate::{blocking_delay_us, peripherals, rcc};
 
+mod bank1;
+pub use bank1::{Bank1Calibration, Bank1Primary, Bank1Vol2};
+
 /// EFUSE error.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -61,6 +64,7 @@ pub struct Efuse<'d> {
     bank0_words: [u32; 8],
     bank1_words: [u32; 8],
     uid: Uid,
+    bank1_calibration: Bank1Calibration,
     _phantom: PhantomData<&'d peripherals::EFUSEC>,
 }
 
@@ -74,11 +78,13 @@ impl<'d> Efuse<'d> {
         let bank0_words = read_bank_words(0)?;
         let bank1_words = read_bank_words(1)?;
         let uid = Uid::from_bank0_words(&bank0_words);
+        let bank1_calibration = Bank1Calibration::decode(&bank1_words);
 
         Ok(Self {
             bank0_words,
             bank1_words,
             uid,
+            bank1_calibration,
             _phantom: PhantomData,
         })
     }
@@ -96,6 +102,11 @@ impl<'d> Efuse<'d> {
     /// Get cached raw bank1 words.
     pub fn bank1_words(&self) -> &[u32; 8] {
         &self.bank1_words
+    }
+
+    /// Get cached bank1 factory calibration values.
+    pub fn calibration(&self) -> &Bank1Calibration {
+        &self.bank1_calibration
     }
 }
 
@@ -224,7 +235,10 @@ fn compute_timings(pclk_hz: u32) -> Result<(u8, u8, u16), Error> {
             field: "thrck",
             value: rd_thrck as u32,
         });
-    }
+}
+
+#[cfg(test)]
+mod tests;
 
     // EFUSE_PGM_THPCK_NS = 20
     let pgm_thpck = (20u64 * pclk_hz as u64) / 1_000_000_000u64 + 1;
