@@ -1,4 +1,4 @@
-//! LCPU power-on和管理（阻塞模式）。
+//! LCPU power-on and management (blocking mode).
 //!
 //! ```no_run
 //! use sifli_hal::lcpu::{Lcpu, LcpuConfig};
@@ -6,17 +6,18 @@
 //! # fn example() -> Result<(), sifli_hal::lcpu::LcpuError> {
 //! let p = sifli_hal::init(Default::default());
 //! let cfg = LcpuConfig::default();
-//! let lcpu = Lcpu::new(p.LPSYS_AON);
+//! let lcpu = Lcpu::new();
 //! lcpu.power_on(&cfg, p.DMAC2_CH8)?;
 //! # Ok(()) }
 //! ```
 
 // Re-export RAM management module
+pub mod memory_map;
 pub mod ram;
 pub use ram::LpsysRam;
 
 mod config;
-pub use config::{ActConfig, ControllerConfig, EmConfig, RomConfig};
+pub use config::{ActConfig, BleConfig, BootConfig, ControllerConfig, EmConfig, RomConfig};
 
 pub(crate) mod controller;
 mod nvds;
@@ -26,14 +27,19 @@ pub mod bt_rf_cal;
 use core::fmt;
 
 use crate::dma::Channel;
-use crate::peripherals;
 use crate::syscfg;
 use crate::Peripheral;
 use crate::{lpaon, patch, rcc};
 
 #[cfg(feature = "sf32lb52x-lcpu")]
 mod sf32lb52x_lcpu_data {
-    include!(concat!(env!("OUT_DIR"), "/sf32lb52x_lcpu.rs"));
+    pub const FIRMWARE: &[u8] = include_bytes!("../../data/sf32lb52x/lcpu/lcpu_firmware.bin");
+    pub const PATCH_A3_LIST: &[u8] = include_bytes!("../../data/sf32lb52x/lcpu/patch_a3_list.bin");
+    pub const PATCH_A3_BIN: &[u8] = include_bytes!("../../data/sf32lb52x/lcpu/patch_a3_bin.bin");
+    pub const PATCH_LETTER_LIST: &[u8] =
+        include_bytes!("../../data/sf32lb52x/lcpu/patch_letter_list.bin");
+    pub const PATCH_LETTER_BIN: &[u8] =
+        include_bytes!("../../data/sf32lb52x/lcpu/patch_letter_bin.bin");
 }
 
 //=============================================================================
@@ -43,84 +49,49 @@ mod sf32lb52x_lcpu_data {
 /// LCPU power-on configuration.
 #[derive(Debug, Clone, Copy)]
 pub struct LcpuConfig {
-    /// LCPU firmware image bytes.
-    ///
-    /// - A3 and earlier: must be provided and copied to LPSYS RAM.
-    /// - Letter Series: optional, firmware is in ROM.
-    pub firmware: Option<&'static [u8]>,
+    /// Boot-time configuration (firmware, patches, ROM parameters).
+    pub boot: BootConfig,
 
-    /// ROM configuration parameters.
-    pub rom: RomConfig,
-
-    /// Patch data for A3 and earlier (record + code format).
-    pub patch_a3: Option<PatchData>,
-
-    /// Patch data for Letter Series (A4/B4) (header + code format).
-    pub patch_letter: Option<PatchData>,
-
-    /// Skip LPSYS HCLK frequency check during image loading (use with care).
-    pub skip_frequency_check: bool,
-
-    /// Disable RF calibration (normally runs after patch installation).
-    pub disable_rf_cal: bool,
-
-    /// BLE controller runtime parameters (applied after boot).
-    /// SDK equivalent: `ble_xtal_less_init()` in `bluetooth.c`.
-    pub controller: ControllerConfig,
-
-    /// Public BD address written to NVDS shared memory.
-    ///
-    /// LCPU ROM reads this during initialization.
-    /// Default: `[0x12, 0x34, 0x56, 0x78, 0xAB, 0xCD]` (SDK default).
-    pub bd_addr: [u8; 6],
+    /// BLE-specific configuration (post-boot controller params + BD address).
+    pub ble: BleConfig,
 }
 
 impl LcpuConfig {
     /// Create a new config with all options unset.
     pub const fn new() -> Self {
         Self {
-            firmware: None,
-            rom: RomConfig {
-                wdt_time: 10,
-                wdt_clk: 32_768,
-                enable_lxt: true,
-                em_config: Some(EmConfig::DEFAULT),
-                act_config: Some(ActConfig::DEFAULT),
-            },
-            patch_a3: None,
-            patch_letter: None,
-            skip_frequency_check: false,
-            disable_rf_cal: false,
-            controller: ControllerConfig {
-                lld_prog_delay: 3,
-                xtal_enabled: false,
-                rc_cycle: 20,
-            },
-            bd_addr: [0x12, 0x34, 0x56, 0x78, 0xAB, 0xCD],
+            boot: BootConfig::new(),
+            ble: BleConfig::new(),
         }
     }
 
     /// Skip LPSYS HCLK frequency check during image loading.
     pub const fn skip_frequency_check(mut self, skip: bool) -> Self {
-        self.skip_frequency_check = skip;
+        self.boot.skip_frequency_check = skip;
         self
     }
 
     /// Disable RF calibration (normally runs after patch installation).
     pub const fn disable_rf_cal(mut self, disable: bool) -> Self {
-        self.disable_rf_cal = disable;
+        self.boot.disable_rf_cal = disable;
         self
     }
 
     /// Set BLE Exchange Memory buffer configuration (Letter Series only).
     pub const fn em_config(mut self, config: EmConfig) -> Self {
-        self.rom.em_config = Some(config);
+        self.boot.rom.em_config = Some(config);
         self
     }
 
     /// Set BLE/BT activity configuration (Letter Series only).
     pub const fn act_config(mut self, config: ActConfig) -> Self {
-        self.rom.act_config = Some(config);
+        self.boot.rom.act_config = Some(config);
+        self
+    }
+
+    /// Set public BD address.
+    pub const fn bd_addr(mut self, addr: [u8; 6]) -> Self {
+        self.ble.bd_addr = addr;
         self
     }
 }
@@ -132,16 +103,16 @@ impl Default for LcpuConfig {
 
         #[cfg(feature = "sf32lb52x-lcpu")]
         {
-            cfg.firmware = Some(sf32lb52x_lcpu_data::SF32LB52X_LCPU_FIRMWARE);
-            cfg.patch_a3 = Some(PatchData {
-                list: sf32lb52x_lcpu_data::SF32LB52X_LCPU_PATCH_A3_LIST,
-                bin: sf32lb52x_lcpu_data::SF32LB52X_LCPU_PATCH_A3_BIN,
+            cfg.boot.firmware = Some(sf32lb52x_lcpu_data::FIRMWARE);
+            cfg.boot.patch_a3 = Some(PatchData {
+                list: sf32lb52x_lcpu_data::PATCH_A3_LIST,
+                bin: sf32lb52x_lcpu_data::PATCH_A3_BIN,
             });
-            cfg.patch_letter = Some(PatchData {
-                list: sf32lb52x_lcpu_data::SF32LB52X_LCPU_PATCH_LETTER_LIST,
-                bin: sf32lb52x_lcpu_data::SF32LB52X_LCPU_PATCH_LETTER_BIN,
+            cfg.boot.patch_letter = Some(PatchData {
+                list: sf32lb52x_lcpu_data::PATCH_LETTER_LIST,
+                bin: sf32lb52x_lcpu_data::PATCH_LETTER_BIN,
             });
-            cfg.disable_rf_cal = false;
+            cfg.boot.disable_rf_cal = false;
         }
 
         cfg
@@ -234,23 +205,19 @@ pub enum CoreId {
 // LCPU driver type
 //=============================================================================
 
-/// LCPU driver（Blocking）。
-pub struct Lcpu<'d> {
-    lpaon: lpaon::LpAon<'d, peripherals::LPSYS_AON>,
-}
+/// LCPU driver (blocking).
+pub struct Lcpu;
 
-impl<'d> fmt::Debug for Lcpu<'d> {
+impl fmt::Debug for Lcpu {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Lcpu").finish_non_exhaustive()
     }
 }
 
-impl<'d> Lcpu<'d> {
-    /// 创建一个阻塞版 LCPU 驱动。
-    pub fn new(lpsys_aon: impl Peripheral<P = peripherals::LPSYS_AON> + 'd) -> Self {
-        Self {
-            lpaon: lpaon::LpAon::new(lpsys_aon),
-        }
+impl Lcpu {
+    /// Create a new blocking LCPU driver.
+    pub fn new() -> Self {
+        Self
     }
 }
 
@@ -258,16 +225,16 @@ impl<'d> Lcpu<'d> {
 // Power-on flow
 //=============================================================================
 
-impl<'d> Lcpu<'d> {
-    /// BLE 启动流程（异步）。
+impl Lcpu {
+    /// BLE boot sequence (async).
     ///
-    /// 相比 [`power_on`](Self::power_on)，此方法额外处理：
-    /// 1. 启动后保持 LCPU 唤醒（调用 `rcc::wake_lcpu()`）
-    /// 2. 等待并消费 BT stack 的 warmup 事件
+    /// Compared to [`power_on`](Self::power_on), this method additionally:
+    /// 1. Keeps LCPU awake after boot (calls `rcc::wake_lcpu()`)
+    /// 2. Waits for and consumes the BT stack warmup event
     ///
-    /// ## Warmup 事件
+    /// ## Warmup Event
     ///
-    /// LCPU BT stack 启动后会发送一个 VSC 0xFC11 的 Command Complete 事件（7 字节）：
+    /// After LCPU BT stack boots, it sends a VSC 0xFC11 Command Complete event (7 bytes):
     /// ```text
     /// 04 0E 04 06 11 FC 00
     /// │  │  │  │  └──┴── Opcode: 0xFC11 (Vendor Specific)
@@ -277,24 +244,25 @@ impl<'d> Lcpu<'d> {
     /// └─ H4 Indicator: 0x04 (HCI Event)
     /// ```
     ///
-    /// 必须在发送任何 HCI 命令之前消费此事件，否则可能干扰后续通信。
+    /// This event must be consumed before sending any HCI commands, otherwise it may
+    /// interfere with subsequent communication.
     ///
-    /// ## 参数
+    /// ## Parameters
     ///
-    /// - `config`: LCPU 启动配置
-    /// - `hci_rx`: HCI 接收端，用于读取 warmup 事件（通常是 `IpcQueueRx`）
+    /// - `config`: LCPU boot configuration
+    /// - `hci_rx`: HCI receive end for reading the warmup event (typically `IpcQueueRx`)
     ///
     /// ## Example
     ///
     /// ```no_run
     /// # async fn example() -> Result<(), sifli_hal::lcpu::LcpuError> {
     /// # let p = sifli_hal::init(Default::default());
-    /// # let lcpu = sifli_hal::lcpu::Lcpu::new(p.LPSYS_AON);
+    /// # let lcpu = sifli_hal::lcpu::Lcpu::new();
     /// # let mut hci_rx: sifli_hal::ipc::IpcQueueRx = todo!();
     /// use sifli_hal::lcpu::LcpuConfig;
     ///
     /// lcpu.ble_power_on(&LcpuConfig::default(), p.DMAC2_CH8, &mut hci_rx).await?;
-    /// // 现在可以安全地发送 HCI 命令
+    /// // Now safe to send HCI commands
     /// # Ok(())
     /// # }
     /// ```
@@ -307,32 +275,32 @@ impl<'d> Lcpu<'d> {
     where
         R: embedded_io_async::Read,
     {
-        // 0. 写入 NVDS 到 LCPU 共享内存（SDK: bt_stack_nvds_init）
-        //    必须在 LCPU 启动前完成，ROM 读取此数据初始化蓝牙参数。
-        //    先 wake LCPU 以确保共享内存可访问。
+        // 0. Write NVDS to LCPU shared memory (SDK: bt_stack_nvds_init)
+        //    Must complete before LCPU boot; ROM reads this to initialize BT parameters.
+        //    Wake LCPU first to ensure shared memory is accessible.
         unsafe { rcc::wake_lcpu() };
-        nvds::write_default(&config.bd_addr, config.rom.enable_lxt);
+        nvds::write_default(&config.ble.bd_addr, config.boot.rom.enable_lxt);
         unsafe { rcc::cancel_lcpu_active_request() };
 
-        // 1. 执行标准启动流程
+        // 1. Execute standard boot sequence
         self.power_on(config, dma_ch)?;
 
-        // 2. 保持 LCPU 唤醒（power_on 结束时允许了睡眠）
+        // 2. Keep LCPU awake (power_on allowed sleep at the end)
         unsafe { rcc::wake_lcpu() };
 
-        // 3. 读取并丢弃 warmup 事件
+        // 3. Read and discard warmup event
         consume_warmup_event(hci_rx).await?;
 
-        // 4. 控制器初始化（SDK: bluetooth_init）
-        //    包含：sleep timing + MAC clock + CFO tracking + 禁止 BLE 睡眠
-        controller::init(&config.controller);
+        // 4. Controller initialization (SDK: bluetooth_init)
+        //    Includes: sleep timing + MAC clock + CFO tracking + disable BLE sleep
+        controller::init(&config.ble.controller);
 
         Ok(())
     }
 
-    /// 阻塞版 LCPU 启动流程。
+    /// Blocking LCPU boot sequence.
     pub fn power_on(&self, config: &LcpuConfig, dma_ch: impl Peripheral<P = impl Channel>) -> Result<(), LcpuError> {
-        // 1. Wake LCPU。
+        // 1. Wake LCPU.
         debug!("Step 1: Waking up LCPU");
         unsafe {
             rcc::wake_lcpu();
@@ -344,11 +312,11 @@ impl<'d> Lcpu<'d> {
 
         // 3. Configure ROM parameters (bf0_lcpu_init.c:168).
         debug!("Step 3: Configuring ROM parameters");
-        ram::rom_config(&config.rom, &config.controller)?;
+        ram::rom_config(&config.boot.rom, &config.ble.controller)?;
 
         // 4. Enforce frequency limit while loading (bf0_lcpu_init.c:170-176).
         // If frequency exceeds 24MHz, automatically reduce it.
-        let _original_freq_hz = if !config.skip_frequency_check {
+        let _original_freq_hz = if !config.boot.skip_frequency_check {
             debug!("Step 4: Ensuring LCPU frequency ≤ 24MHz during loading");
             ensure_safe_lcpu_frequency()?
         } else {
@@ -361,7 +329,7 @@ impl<'d> Lcpu<'d> {
         if !is_letter {
             debug!("Step 5: Installing LCPU firmware image (A3/earlier)");
 
-            if let Some(firmware) = config.firmware {
+            if let Some(firmware) = config.boot.firmware {
                 ram::img_install(firmware)?;
             } else {
                 error!("Firmware required for A3 and earlier revisions");
@@ -376,7 +344,7 @@ impl<'d> Lcpu<'d> {
             "Step 6: Configuring LCPU start address (0x{:08X})",
             LpsysRam::CODE_START
         );
-        self.lpaon.configure_lcpu_start();
+        lpaon::configure_lcpu_start();
 
         // 7. Install patches and perform RF calibration (bf0_lcpu_init.c:185).
         debug!("Step 7: Installing patches and RF calibration");
@@ -386,7 +354,7 @@ impl<'d> Lcpu<'d> {
         debug!("Step 8: Releasing LCPU to run");
         self.release_lcpu()?;
 
-        // 9. 清除 HP2LP_REQ，允许 LP 进入低功耗。
+        // 9. Clear HP2LP_REQ, allow LP to enter low power.
         unsafe {
             rcc::cancel_lcpu_active_request();
         }
@@ -394,7 +362,7 @@ impl<'d> Lcpu<'d> {
         Ok(())
     }
 
-    /// 阻塞版关机：仅复位并保持 CPUWAIT。
+    /// Blocking shutdown: reset and hold CPUWAIT.
     pub fn power_off(&self) -> Result<(), LcpuError> {
         info!("Powering off LCPU");
 
@@ -407,9 +375,9 @@ impl<'d> Lcpu<'d> {
 
     fn reset_and_halt_lcpu(&self) -> Result<(), LcpuError> {
         // Only perform reset flow when CPUWAIT is not set.
-        if !self.lpaon.cpuwait() {
+        if !lpaon::cpuwait() {
             // 1. Set CPUWAIT so LCPU stays halted.
-            self.lpaon.set_cpuwait(true);
+            lpaon::set_cpuwait(true);
 
             // 2. Reset LCPU and MAC (SF32LB52X requires both).
             rcc::set_lp_lcpu_reset(true);
@@ -419,9 +387,9 @@ impl<'d> Lcpu<'d> {
             while !rcc::lp_lcpu_reset_asserted() || !rcc::lp_mac_reset_asserted() {}
 
             // 3. If LPSYS is sleeping, wake it up.
-            if self.lpaon.sleep_status() {
-                self.lpaon.set_wkup_req(true);
-                while self.lpaon.sleep_status() {}
+            if lpaon::sleep_status() {
+                lpaon::set_wkup_req(true);
+                while lpaon::sleep_status() {}
             }
 
             // 4. Clear reset bits, keep CPUWAIT = 1.
@@ -434,7 +402,7 @@ impl<'d> Lcpu<'d> {
 
     fn release_lcpu(&self) -> Result<(), LcpuError> {
         // Clear CPUWAIT so LCPU can run.
-        self.lpaon.set_cpuwait(false);
+        lpaon::set_cpuwait(false);
 
         Ok(())
     }
@@ -503,10 +471,10 @@ fn install_patch_and_calibrate(
     // SDK lcpu_ble_patch_install — step 1: patch install
     let patch_data = if syscfg::read_idr().revision().is_letter_series() {
         debug!("Using Letter Series patch data");
-        config.patch_letter
+        config.boot.patch_letter
     } else {
         debug!("Using A3 patch data");
-        config.patch_a3
+        config.boot.patch_a3
     };
 
     if let Some(data) = patch_data {
@@ -521,7 +489,7 @@ fn install_patch_and_calibrate(
     }
 
     // SDK lcpu_ble_patch_install — steps 2-4: bt_rf_cal + adc_resume + EM clear
-    if !config.disable_rf_cal {
+    if !config.boot.disable_rf_cal {
         debug!("Performing RF calibration");
         bt_rf_cal::bt_rf_cal(dma_ch);
     } else {
@@ -531,20 +499,20 @@ fn install_patch_and_calibrate(
     Ok(())
 }
 
-/// 消费 BT warmup 事件。
+/// Consume the BT warmup event.
 ///
-/// Warmup 事件是一个 H4 格式的 HCI Event 包：
+/// The warmup event is an H4-formatted HCI Event packet:
 /// - H4 indicator: 0x04 (HCI Event)
 /// - Event code: 0x0E (Command Complete)
 /// - Parameter length: 0x04
 /// - Payload: 06 11 FC 00
 ///
-/// 总共 7 字节。此函数读取并丢弃该事件。
+/// Total 7 bytes. This function reads and discards the event.
 async fn consume_warmup_event<R>(rx: &mut R) -> Result<(), LcpuError>
 where
     R: embedded_io_async::Read,
 {
-    // H4 HCI Event 格式：
+    // H4 HCI Event format:
     // [0] H4 indicator (0x04 = Event)
     // [1] Event code
     // [2] Parameter length (N)
@@ -553,36 +521,36 @@ where
     let mut header = [0u8; 3];
     read_exact(rx, &mut header).await?;
 
-    info!(
-        "Warmup header: {:02X} {:02X} {:02X}",
+    debug!(
+        "[hci] warmup header: {:02X} {:02X} {:02X}",
         header[0], header[1], header[2]
     );
 
-    // 验证是 HCI Event
+    // Verify it's an HCI Event
     if header[0] != 0x04 {
         warn!(
-            "Unexpected H4 indicator in warmup: 0x{:02X}, expected 0x04",
+            "[hci] unexpected H4 indicator in warmup: 0x{:02X}, expected 0x04",
             header[0]
         );
     }
 
-    // 读取剩余的参数
+    // Read remaining parameters
     let param_len = header[2] as usize;
     if param_len > 0 {
         let mut params = [0u8; 255];
         read_exact(rx, &mut params[..param_len]).await?;
-        info!(
-            "Warmup params ({} bytes): {:02X}",
+        debug!(
+            "[hci] warmup params ({} bytes): {:02X}",
             param_len,
             &params[..param_len]
         );
     }
 
-    info!("BT warmup event consumed OK");
+    debug!("[hci] warmup event consumed");
     Ok(())
 }
 
-/// 读取精确数量的字节（embedded_io_async::Read 的辅助函数）。
+/// Read exact number of bytes (helper for embedded_io_async::Read).
 async fn read_exact<R>(rx: &mut R, buf: &mut [u8]) -> Result<(), LcpuError>
 where
     R: embedded_io_async::Read,
@@ -591,12 +559,12 @@ where
     while offset < buf.len() {
         match rx.read(&mut buf[offset..]).await {
             Ok(0) => {
-                error!("Unexpected EOF while reading warmup event");
+                error!("[hci] unexpected EOF while reading warmup event");
                 return Err(LcpuError::WarmupReadError);
             }
             Ok(n) => offset += n,
             Err(_e) => {
-                error!("Read error while consuming warmup event");
+                error!("[hci] read error while consuming warmup event");
                 return Err(LcpuError::WarmupReadError);
             }
         }
