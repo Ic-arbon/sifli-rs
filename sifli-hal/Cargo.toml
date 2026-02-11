@@ -48,6 +48,7 @@ embedded-storage = { version = "0.3" }
 embedded-storage-async = { version = "0.4.1" }
 portable-atomic = { version = "1.11.1", features = ["require-cas"] }
 display-driver = { version = "0.1.0" }
+bitfield-struct = "0.12.1"
 
 [build-dependencies]
 serde = { version = "1.0", features = ["derive"] }

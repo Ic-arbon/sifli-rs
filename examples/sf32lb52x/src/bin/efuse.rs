@@ -24,12 +24,13 @@ async fn main(_spawner: Spawner) {
     };
 
     info!("UID: {:x}", efuse.uid().bytes());
-    info!("Bank1 is_io18: {}", efuse.calibration().is_io18);
-    info!("Bank1 primary: {:?}", efuse.calibration().primary);
-    info!("Bank1 vol2: {:?}", efuse.calibration().vol2);
+    let cal = efuse.calibration();
+    info!("Bank1 is_io18: {}", cal.primary.low.is_io18());
+    info!("Bank1 primary low: {:?}", cal.primary.low);
+    info!("Bank1 primary high: {:?}", cal.primary.high);
+    info!("Bank1 vol2: {:?}", cal.vol2);
 
     loop {
         Timer::after_secs(60).await;
     }
 }
-

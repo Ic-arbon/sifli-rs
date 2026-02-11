@@ -8,7 +8,7 @@ use crate::pac::{EFUSEC, PMUC};
 use crate::{blocking_delay_us, peripherals, rcc};
 
 mod bank1;
-pub use bank1::{Bank1Calibration, Bank1Primary, Bank1Vol2};
+pub use bank1::{Bank1Calibration, Bank1Primary, Bank1PrimaryHigh, Bank1PrimaryLow, Bank1Vol2};
 
 /// EFUSE error.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
