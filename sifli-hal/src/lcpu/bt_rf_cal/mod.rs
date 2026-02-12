@@ -9,6 +9,8 @@
 //!
 //! Based on SDK `bt_rf_cal()` and related functions in `bt_rf_fulcal.c`.
 
+#[cfg(feature = "edr-cal")]
+mod edr_lo;
 mod opt;
 pub mod rfc_cmd;
 pub mod rfc_tables;
@@ -17,7 +19,7 @@ mod txdc_hw;
 pub mod vco;
 
 use crate::dma::Channel;
-use crate::efuse::{get_rf_cal_params, RfCalParams};
+use crate::efuse::{Bank1Calibration, Efuse};
 use crate::pac::{BT_PHY, BT_RFC};
 use crate::rcc::{lp_rfc_reset_asserted, set_lp_rfc_reset};
 use crate::Peripheral;
@@ -43,46 +45,39 @@ fn reset_bluetooth_rf() {
     set_lp_rfc_reset(false);
 }
 
-/// Apply EDR power calibration from eFUSE.
+/// Apply EDR power calibration from eFUSE Bank1 calibration data.
 ///
-/// Reads calibration parameters from eFUSE Bank 1 and applies them to:
+/// Applies calibration to:
 /// - TBB_REG.BRF_DAC_LSB_CNT_LV field
 /// - EDR PA BM table adjustments
 ///
 /// Based on SDK `bt_rfc_pwr_cal_edr()` with `ABS_EDR_CAL` enabled.
 ///
 /// Returns the adjusted EDR PA BM values if calibration was applied, None otherwise.
-pub fn apply_edr_power_cal() -> Option<[u8; 8]> {
-    let params = match get_rf_cal_params() {
-        Some(p) => {
-            debug!(
-                "eFUSE RF params: edr_cal={} pa_bm_cal={} dac_lsb={} tmxcap_flag={} tmxcap_0={} tmxcap_78={}",
-                p.edr_cal_flag, p.pa_bm_cal, p.dac_lsb_cnt_cal,
-                p.tmxcap_sel_flag, p.tmxcap_sel_0, p.tmxcap_sel_7_8
-            );
-            p
-        }
-        None => {
-            warn!("eFUSE RF params: read FAILED (None)");
-            return None;
-        }
-    };
+pub fn apply_edr_power_cal(cal: &Bank1Calibration) -> Option<[u8; 8]> {
+    let low = &cal.primary.low;
+    let high = &cal.primary.high;
 
-    if !params.edr_cal_flag {
+    debug!(
+        "eFUSE RF params: edr_cal={} pa_bm={} dac_lsb={} tmxcap_flag={} tmxcap_00={} tmxcap_78={}",
+        low.edr_cal_done(), low.pa_bm(), high.dac_lsb_cnt(),
+        high.tmxcap_flag(), high.tmxcap_ch00(), high.tmxcap_ch78()
+    );
+
+    if !low.edr_cal_done() {
         debug!("EDR cal flag not set, skipping EDR power cal");
         return None;
     }
 
     // Apply DAC LSB count calibration to TBB_REG
     BT_RFC.tbb_reg().modify(|w| {
-        w.set_brf_dac_lsb_cnt_lv(params.dac_lsb_cnt_cal);
+        w.set_brf_dac_lsb_cnt_lv(high.dac_lsb_cnt());
     });
 
-    // Adjust EDR PA BM values based on pa_bm_cal
+    // Adjust EDR PA BM values based on pa_bm
     let mut edr_pa_bm = DEFAULT_EDR_PA_BM;
-    match params.pa_bm_cal {
+    match low.pa_bm() {
         1 => {
-            // Increase power for lower levels
             edr_pa_bm[0] = edr_pa_bm[0].saturating_add(1);
             edr_pa_bm[1] = edr_pa_bm[1].saturating_add(2);
             edr_pa_bm[2] = edr_pa_bm[2].saturating_add(2);
@@ -90,38 +85,26 @@ pub fn apply_edr_power_cal() -> Option<[u8; 8]> {
             edr_pa_bm[4] = edr_pa_bm[4].saturating_add(4);
         }
         3 => {
-            // Decrease power for mid/high levels
             edr_pa_bm[1] = edr_pa_bm[1].saturating_sub(1);
             edr_pa_bm[2] = edr_pa_bm[2].saturating_sub(2);
             edr_pa_bm[3] = edr_pa_bm[3].saturating_sub(2);
             edr_pa_bm[4] = edr_pa_bm[4].saturating_sub(3);
         }
-        _ => {
-            // No adjustment for pa_bm_cal == 0 or 2
-        }
+        _ => {}
     }
 
     Some(edr_pa_bm)
 }
 
-/// Get TMXCAP selection values from eFUSE.
+/// Get TMXCAP selection values from eFUSE Bank1 calibration data.
 ///
-/// Returns (tmxcap_sel_0, tmxcap_sel_7_8) if TMXCAP calibration flag is set.
+/// Returns (tmxcap_ch00, tmxcap_ch78) if TMXCAP calibration flag is set.
 #[allow(dead_code)]
-pub fn get_tmxcap_sel() -> Option<(u8, u8)> {
-    let params = get_rf_cal_params()?;
-
-    if !params.tmxcap_sel_flag {
+pub fn get_tmxcap_sel(cal: &Bank1Calibration) -> Option<(u8, u8)> {
+    if !cal.primary.high.tmxcap_flag() {
         return None;
     }
-
-    Some((params.tmxcap_sel_0, params.tmxcap_sel_7_8))
-}
-
-/// Get raw RF calibration parameters from eFUSE.
-#[allow(dead_code)]
-pub fn get_rf_efuse_params() -> Option<&'static RfCalParams> {
-    get_rf_cal_params()
+    Some((cal.primary.high.tmxcap_ch00(), cal.primary.high.tmxcap_ch78()))
 }
 
 /// Default BT RF power parameters.
@@ -320,13 +303,17 @@ pub fn bt_rf_cal(dma_ch: impl Peripheral<P = impl Channel>) {
     rf_dump_checkpoint("AFTER_VCO_CAL");
 
     // SDK:5078 bt_ful_cal — step b: bt_rfc_edrlo_3g_cal()
-    // TODO: EDR LO 3GHz VCO ACAL/FCAL + OSLO calibration (bt_rf_fulcal.c:3026-3620)
-    //   - Enable VCO3G, OSLO, LODISTEDR; ACAL/FCAL binary search for EDR channels
-    //   - OSLO cal: save 3 GPADC regs → configure GPADC (P_INT_EN/SE/LDOREF_EN,
-    //     CONV_WIDTH=252, SAMP_WIDTH=239) → FC binary search → BM binary search
-    //     → restore 3 GPADC regs
-    //   - Write EDR LO results to RFC SRAM (79ch idac/capcode + kcal)
-    //   Impact: EDR TX frequency accuracy / phase noise; pure BLE works without this.
+    #[cfg(feature = "edr-cal")]
+    let edr_lo_result = edr_lo::edr_lo_cal_full();
+    #[cfg(feature = "edr-cal")]
+    {
+        debug!(
+            "EDR LO cal: ch[0] fc={} bm={}, ch[39] fc={} bm={}",
+            edr_lo_result.oslo_fc[0], edr_lo_result.oslo_bm[0],
+            edr_lo_result.oslo_fc[39], edr_lo_result.oslo_bm[39]
+        );
+        rf_dump_checkpoint("AFTER_EDR_LO_CAL");
+    }
 
     // SDK:5085-5086 bt_ful_cal — step c: LPSYS clock switch before TXDC
     // TODO: hwp_lpsys_rcc->CSR = (CSR & ~SEL_SYS) | (1 << SEL_SYS_Pos)
@@ -335,7 +322,13 @@ pub fn bt_rf_cal(dma_ch: impl Peripheral<P = impl Channel>) {
     // SDK:5088 bt_ful_cal — step d: bt_rfc_txdc_cal(addr, s_cal_enable)
     // Note: SDK does EDR eFUSE power cal inside bt_rfc_txdc_cal (line 3753-3791);
     // we extract it here — the result is equivalent.
-    let edr_pa_bm_opt = apply_edr_power_cal();
+    // Read eFUSE calibration data for EDR power calibration
+    let efuse_cal = unsafe { Efuse::new(crate::peripherals::EFUSEC::steal()) }
+        .ok()
+        .map(|e| *e.calibration());
+    let edr_pa_bm_opt = efuse_cal
+        .as_ref()
+        .and_then(|cal| apply_edr_power_cal(cal));
     match &edr_pa_bm_opt {
         Some(pa_bm) => debug!(
             "EDR power cal applied: PA_BM=[{},{},{},{},{},{},{},{}]",
@@ -347,6 +340,10 @@ pub fn bt_rf_cal(dma_ch: impl Peripheral<P = impl Channel>) {
 
     // Store VCO cal tables first — force_tx needs CAL_ADDR to look up VCO params.
     let txdc_table_addr = rfc_tables::store_vco_cal_tables(cmd_end_addr, &vco_cal);
+
+    // Overwrite BT TX table with EDR LO results (idac, capcode, oslo_fc, oslo_bm, dpsk_gain)
+    #[cfg(feature = "edr-cal")]
+    rfc_tables::store_edr_lo_cal_tables(&edr_lo_result);
 
     let mut txdc_config = txdc::TxdcCalConfig::default();
     txdc_config.power_level_mask = cal_enable;

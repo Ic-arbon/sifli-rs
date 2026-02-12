@@ -1,4 +1,4 @@
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 #![doc = include_str!("../README.md")]
 
 // This mod MUST go first, so that the others see its macros.
@@ -13,12 +13,12 @@ mod utils;
 
 pub mod rcc;
 pub mod gpio;
-pub mod i2c;
 pub mod timer;
 pub mod time;
 pub mod pmu;
 pub mod patch;
 pub mod syscfg;
+pub mod efuse;
 #[allow(clippy::all)] // modified from embassy-stm32
 pub mod usart;
 pub mod adc;
@@ -30,7 +30,6 @@ pub mod mailbox;
 pub mod ipc;
 #[cfg(feature = "usb")]
 pub mod usb;
-pub mod efuse;
 pub mod rng;
 pub mod lcpu;
 pub(crate) mod lpaon;
@@ -105,11 +104,13 @@ pub mod config {
 }
 pub use config::Config;
 
+#[cfg(target_arch = "arm")]
 mod mpu;
 
 /// Initialize the `sifli-hal` with the provided configuration.
 ///
-/// This returns the peripheral singletons that can be used for creating drivers.
+/// Returns peripheral singletons. Clock frequencies can be queried
+/// via [`rcc::clocks()`] after initialization.
 ///
 /// This should only be called once at startup, otherwise it panics.
 pub fn init(config: Config) -> Peripherals {
@@ -124,18 +125,19 @@ pub fn init(config: Config) -> Peripherals {
 
         #[cfg(feature = "_time-driver")]
         time_driver::init();
-        
+
         gpio::init(config.gpio1_it_priority);
         critical_section::with(|cs| {
             dma::init(cs);
         });
-        
+
     }
     p
 }
 
 fn system_init() {
     unsafe {
+        #[allow(unused_mut)] // mut needed on ARM for SCB cache ops
         let mut cp = cortex_m::Peripherals::steal();
 
         // enable CP0/CP1/CP2 Full Access
@@ -144,13 +146,17 @@ fn system_init() {
         });
 
         // Consistent with SDK `mpu_config()`: invalidate stale I-cache before MPU/Cache configuration.
+        #[cfg(target_arch = "arm")]
         cp.SCB.invalidate_icache();
 
         // Configure MPU to make cross-core shared SRAM non-cacheable (matching SDK behavior).
+        #[cfg(target_arch = "arm")]
         mpu::init();
 
         // Enable Cache
+        #[cfg(target_arch = "arm")]
         cp.SCB.enable_icache();
+        #[cfg(target_arch = "arm")]
         cp.SCB.enable_dcache(&mut cp.CPUID);
     }
 }
@@ -181,6 +187,24 @@ pub fn blocking_delay_us(us: u32) {
     embassy_time::block_for(embassy_time::Duration::from_micros(us as u64));
     #[cfg(not(feature = "time"))]
     cortex_m_blocking_delay_us(us);
+}
+
+/// Converts a address to a System Bus address.
+/// `HCPU_MPI_SBUS_ADDR``
+pub fn to_system_bus_addr(addr: usize) -> usize {
+    match addr {
+        0x1000_0000..0x2000_0000 => addr + 0x5000_0000,
+        _ => addr,
+    }
+}
+
+/// Converts a address to a Code Bus address.
+/// `HCPU_MPI_CBUS_ADDR``
+pub fn to_code_bus_addr(addr: usize) -> usize {
+    match addr {
+        0x6000_0000..0x7000_0000 => addr - 0x5000_0000,
+        _ => addr,
+    }
 }
 
 /// Macro to bind interrupts to handlers.
