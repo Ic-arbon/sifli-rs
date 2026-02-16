@@ -25,8 +25,8 @@ async fn main(_spawner: Spawner) {
     // DLL2 Freq = (stg + 1) * 24MHz = (9 + 1) * 24MHz = 240MHz
     // Hclk Freq = Dll1 / hdiv = 192MHz
     // Usbclk Freq = Dll2 / 4(usb_div_internal) = 60MHz(IMMUTABLE)
-    let config = sifli_hal::Config::default()
-        .with_rcc(const {
+    let config = sifli_hal::Config::default().with_rcc(
+        const {
             rcc::ConfigBuilder::new()
                 .with_sys(Sysclk::Dll1)
                 .with_dll1(Dll::new().with_stg(DllStage::Mul16))
@@ -34,7 +34,8 @@ async fn main(_spawner: Spawner) {
                 .with_hdiv(rcc::HclkPrescaler::new(2))
                 .with_mux(rcc::ClockMux::new().with_usbsel(rcc::Usbsel::Dll2))
                 .checked()
-        });
+        },
+    );
 
     let p = sifli_hal::init(config);
 

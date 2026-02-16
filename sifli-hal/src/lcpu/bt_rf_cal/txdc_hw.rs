@@ -3,8 +3,8 @@
 //! Contains the register-level setup and teardown sequences for TX DC offset
 //! calibration. These are separated from the algorithm logic in `txdc.rs`.
 
-use crate::pac::{BT_MAC, BT_PHY, BT_RFC};
 use super::txdc::TxdcCalConfig;
+use crate::pac::{BT_MAC, BT_PHY, BT_RFC};
 
 /// Configure hardware for TXDC calibration.
 ///
@@ -223,7 +223,7 @@ pub(super) fn configure_power_level(level: usize, config: &TxdcCalConfig) {
 
     // Configure TX DC CAL gain based on power level
     let dc_cal_gain = match level {
-        0 | 1 | 2 => 0x60,
+        0..=2 => 0x60,
         3 => 0x70,
         4 => 0x50,
         5 => 0x30,

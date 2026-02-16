@@ -4,7 +4,7 @@
 // https://github.com/embassy-rs/embassy/tree/main/embassy-stm32
 // Special thanks to the Embassy Project and its contributors for their work!
 
-use core::ops::{Div, Mul, Add};
+use core::ops::{Add, Div, Mul};
 
 /// Hertz
 #[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Copy, Debug)]
@@ -84,7 +84,6 @@ impl Div<u8> for Hertz {
         self / (rhs as u32)
     }
 }
-
 
 impl Add<Hertz> for Hertz {
     type Output = Hertz;

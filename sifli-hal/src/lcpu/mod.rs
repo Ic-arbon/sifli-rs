@@ -299,7 +299,11 @@ impl Lcpu {
     }
 
     /// Blocking LCPU boot sequence.
-    pub fn power_on(&self, config: &LcpuConfig, dma_ch: impl Peripheral<P = impl Channel>) -> Result<(), LcpuError> {
+    pub fn power_on(
+        &self,
+        config: &LcpuConfig,
+        dma_ch: impl Peripheral<P = impl Channel>,
+    ) -> Result<(), LcpuError> {
         // 1. Wake LCPU.
         debug!("Step 1: Waking up LCPU");
         unsafe {
@@ -521,4 +525,3 @@ where
     debug!("[hci] warmup event consumed");
     Ok(())
 }
-

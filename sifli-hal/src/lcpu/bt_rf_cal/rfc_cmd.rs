@@ -81,7 +81,7 @@ impl CmdBuilder {
 
     /// Pad to even length (commands are packed as pairs into 32-bit words).
     fn pad_even(&mut self) {
-        if self.len % 2 != 0 {
+        if !self.len.is_multiple_of(2) {
             self.push(END);
         }
     }

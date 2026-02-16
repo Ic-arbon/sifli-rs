@@ -118,7 +118,8 @@ fn configure_sleep_timing(config: &ControllerConfig) {
         }
         debug!(
             "Controller init: rwip_prog_delay={} written to 0x{:08X}",
-            config.lld_prog_delay, addr::RWIP_PROG_DELAY_A3 as usize
+            config.lld_prog_delay,
+            addr::RWIP_PROG_DELAY_A3 as usize
         );
         let cfg_ptr = addr::G_ROM_CONFIG_A3;
 

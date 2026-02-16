@@ -15,8 +15,8 @@ use super::word::{Word, WordSize};
 use super::{AnyChannel, Channel, Request, STATE};
 use crate::{interrupt, pac, peripherals};
 
+pub use pac::dmac::vals::Dir;
 pub use pac::dmac::vals::Pl as Priority;
-pub use pac::dmac::vals::Dir as Dir;
 
 /// DMA address increment mode.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -108,9 +108,7 @@ impl ChannelState {
 }
 
 /// safety: must be called only once
-pub(crate) unsafe fn init(
-    cs: critical_section::CriticalSection,
-) {
+pub(crate) unsafe fn init(cs: critical_section::CriticalSection) {
     crate::rcc::enable_and_reset_with_cs::<peripherals::DMAC1>(cs);
 
     // Initialize DMAC2 if LCPU feature is enabled
@@ -130,7 +128,11 @@ impl AnyChannel {
         let isr = r.isr().read();
 
         if isr.teif(info.num) {
-            panic!("DMA: error on DMA@{:08x} channel {}", r.as_ptr() as u32, info.num);
+            panic!(
+                "DMA: error on DMA@{:08x} channel {}",
+                r.as_ptr() as u32,
+                info.num
+            );
         }
 
         if isr.htif(info.num) && cr.read().htie() {
@@ -144,7 +146,7 @@ impl AnyChannel {
             // we should set EN manually on sf32. (?)
             if !r.ccr(info.num).read().circ() {
                 r.ccr(info.num).modify(|w| {
-                    w.set_en(false); 
+                    w.set_en(false);
                 });
             }
             state.complete_count.fetch_add(1, Ordering::Release);
@@ -182,7 +184,9 @@ impl AnyChannel {
         // ex: if mem_size=1, peri_size=4 and ndtr=3 it'll do 12 mem transfers, 3 peri transfers.
         let ndtr = match (mem_size, peri_size) {
             (WordSize::FourBytes, WordSize::OneByte) => mem_len * 4,
-            (WordSize::FourBytes, WordSize::TwoBytes) | (WordSize::TwoBytes, WordSize::OneByte) => mem_len * 2,
+            (WordSize::FourBytes, WordSize::TwoBytes) | (WordSize::TwoBytes, WordSize::OneByte) => {
+                mem_len * 2
+            }
             (WordSize::FourBytes, WordSize::FourBytes)
             | (WordSize::TwoBytes, WordSize::TwoBytes)
             | (WordSize::OneByte, WordSize::OneByte) => mem_len,
@@ -200,14 +204,17 @@ impl AnyChannel {
 
         // In M2M mode CPAR is also a memory address, apply remap for flash addresses
         let peri_addr = if mem2mem {
-            Self::remap_addr(peri_addr as u32)
+            crate::to_system_bus_addr(peri_addr as _) as _
         } else {
             peri_addr as u32
         };
-        r.cpar(channel_num).write_value(pac::dmac::regs::Cpar(peri_addr));
+        r.cpar(channel_num)
+            .write_value(pac::dmac::regs::Cpar(peri_addr));
 
-        r.cm0ar(channel_num).write_value(pac::dmac::regs::Cm0ar(Self::remap_addr(mem_addr as u32)));
-        r.cndtr(channel_num).write_value(pac::dmac::regs::Cndtr(ndtr as _));
+        r.cm0ar(channel_num)
+            .write_value(pac::dmac::regs::Cm0ar(crate::to_system_bus_addr(mem_addr as _) as _));
+        r.cndtr(channel_num)
+            .write_value(pac::dmac::regs::Cndtr(ndtr as _));
         r.cselr(channel_num / 4)
             .modify(|w| w.set_cs(channel_num % 4, request as u8));
         r.ccr(channel_num).write(|w| {
@@ -216,10 +223,22 @@ impl AnyChannel {
             w.set_psize(peri_size.into());
             w.set_pl(options.priority.into());
             match incr {
-                Increment::None => { w.set_minc(false); w.set_pinc(false); }
-                Increment::Peripheral => { w.set_minc(false); w.set_pinc(true); }
-                Increment::Memory => { w.set_minc(true); w.set_pinc(false); }
-                Increment::Both => { w.set_minc(true); w.set_pinc(true); }
+                Increment::None => {
+                    w.set_minc(false);
+                    w.set_pinc(false);
+                }
+                Increment::Peripheral => {
+                    w.set_minc(false);
+                    w.set_pinc(true);
+                }
+                Increment::Memory => {
+                    w.set_minc(true);
+                    w.set_pinc(false);
+                }
+                Increment::Both => {
+                    w.set_minc(true);
+                    w.set_pinc(true);
+                }
             }
             w.set_teie(true);
             w.set_htie(options.half_transfer_ir);
@@ -229,12 +248,10 @@ impl AnyChannel {
             w.set_en(false);
         });
 
-        crate::_generated::enable_dma_channel_interrupt_priority(self.id, options.interrupt_priority);
-    }
-
-    /// Remap address for DMA bus access (flash addresses < 0x2000_0000 need offset).
-    fn remap_addr(addr: u32) -> u32 {
-        if addr >= 0x2000_0000 { addr } else { addr + 0x5000_0000 }
+        crate::_generated::enable_dma_channel_interrupt_priority(
+            self.id,
+            options.interrupt_priority,
+        );
     }
 
     fn start(&self) {
@@ -303,7 +320,6 @@ impl AnyChannel {
             Poll::Pending
         }
     }
-
 }
 
 /// DMA transfer.
@@ -850,7 +866,8 @@ impl<'a, W: Word> ReadableRingBuffer<'a, W> {
 
     /// Clear all data in the ring buffer.
     pub fn clear(&mut self) {
-        self.ringbuf.reset(&mut DmaCtrlImpl(self.channel.reborrow()));
+        self.ringbuf
+            .reset(&mut DmaCtrlImpl(self.channel.reborrow()));
     }
 
     /// Read elements from the ring buffer
@@ -859,7 +876,8 @@ impl<'a, W: Word> ReadableRingBuffer<'a, W> {
     /// The length remaining is the capacity, ring_buf.len(), less the elements remaining after the read
     /// Error is returned if the portion to be read was overwritten by the DMA controller.
     pub fn read(&mut self, buf: &mut [W]) -> Result<(usize, usize), Error> {
-        self.ringbuf.read(&mut DmaCtrlImpl(self.channel.reborrow()), buf)
+        self.ringbuf
+            .read(&mut DmaCtrlImpl(self.channel.reborrow()), buf)
     }
 
     /// Read an exact number of elements from the ringbuffer.
@@ -881,7 +899,9 @@ impl<'a, W: Word> ReadableRingBuffer<'a, W> {
 
     /// The current length of the ringbuffer
     pub fn len(&mut self) -> Result<usize, Error> {
-        Ok(self.ringbuf.len(&mut DmaCtrlImpl(self.channel.reborrow()))?)
+        Ok(self
+            .ringbuf
+            .len(&mut DmaCtrlImpl(self.channel.reborrow()))?)
     }
 
     /// The capacity of the ringbuffer
@@ -1023,7 +1043,8 @@ impl<'a, W: Word> WritableRingBuffer<'a, W> {
 
     /// Clear all data in the ring buffer.
     pub fn clear(&mut self) {
-        self.ringbuf.reset(&mut DmaCtrlImpl(self.channel.reborrow()));
+        self.ringbuf
+            .reset(&mut DmaCtrlImpl(self.channel.reborrow()));
     }
 
     /// Write elements directly to the raw buffer.
@@ -1035,7 +1056,8 @@ impl<'a, W: Word> WritableRingBuffer<'a, W> {
     /// Write elements from the ring buffer
     /// Return a tuple of the length written and the length remaining in the buffer
     pub fn write(&mut self, buf: &[W]) -> Result<(usize, usize), Error> {
-        self.ringbuf.write(&mut DmaCtrlImpl(self.channel.reborrow()), buf)
+        self.ringbuf
+            .write(&mut DmaCtrlImpl(self.channel.reborrow()), buf)
     }
 
     /// Write an exact number of elements to the ringbuffer.
@@ -1054,7 +1076,9 @@ impl<'a, W: Word> WritableRingBuffer<'a, W> {
 
     /// The current length of the ringbuffer
     pub fn len(&mut self) -> Result<usize, Error> {
-        Ok(self.ringbuf.len(&mut DmaCtrlImpl(self.channel.reborrow()))?)
+        Ok(self
+            .ringbuf
+            .len(&mut DmaCtrlImpl(self.channel.reborrow()))?)
     }
 
     /// The capacity of the ringbuffer

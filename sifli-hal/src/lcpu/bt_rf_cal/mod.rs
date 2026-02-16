@@ -60,8 +60,12 @@ pub fn apply_edr_power_cal(cal: &Bank1Calibration) -> Option<[u8; 8]> {
 
     debug!(
         "eFUSE RF params: edr_cal={} pa_bm={} dac_lsb={} tmxcap_flag={} tmxcap_00={} tmxcap_78={}",
-        low.edr_cal_done(), low.pa_bm(), high.dac_lsb_cnt(),
-        high.tmxcap_flag(), high.tmxcap_ch00(), high.tmxcap_ch78()
+        low.edr_cal_done(),
+        low.pa_bm(),
+        high.dac_lsb_cnt(),
+        high.tmxcap_flag(),
+        high.tmxcap_ch00(),
+        high.tmxcap_ch78()
     );
 
     if !low.edr_cal_done() {
@@ -104,7 +108,10 @@ pub fn get_tmxcap_sel(cal: &Bank1Calibration) -> Option<(u8, u8)> {
     if !cal.primary.high.tmxcap_flag() {
         return None;
     }
-    Some((cal.primary.high.tmxcap_ch00(), cal.primary.high.tmxcap_ch78()))
+    Some((
+        cal.primary.high.tmxcap_ch00(),
+        cal.primary.high.tmxcap_ch78(),
+    ))
 }
 
 /// Default BT RF power parameters.
@@ -297,8 +304,12 @@ pub fn bt_rf_cal(dma_ch: impl Peripheral<P = impl Channel>) {
     let vco_cal = vco::vco_cal_full();
     debug!(
         "VCO cal result: tx[0] idac={} capcode={} kcal={}, tx[39] idac={} capcode={} kcal={}",
-        vco_cal.idac_tx[0], vco_cal.capcode_tx[0], vco_cal.kcal[0],
-        vco_cal.idac_tx[39], vco_cal.capcode_tx[39], vco_cal.kcal[39],
+        vco_cal.idac_tx[0],
+        vco_cal.capcode_tx[0],
+        vco_cal.kcal[0],
+        vco_cal.idac_tx[39],
+        vco_cal.capcode_tx[39],
+        vco_cal.kcal[39],
     );
     rf_dump_checkpoint("AFTER_VCO_CAL");
 
@@ -309,8 +320,10 @@ pub fn bt_rf_cal(dma_ch: impl Peripheral<P = impl Channel>) {
     {
         debug!(
             "EDR LO cal: ch[0] fc={} bm={}, ch[39] fc={} bm={}",
-            edr_lo_result.oslo_fc[0], edr_lo_result.oslo_bm[0],
-            edr_lo_result.oslo_fc[39], edr_lo_result.oslo_bm[39]
+            edr_lo_result.oslo_fc[0],
+            edr_lo_result.oslo_bm[0],
+            edr_lo_result.oslo_fc[39],
+            edr_lo_result.oslo_bm[39]
         );
         rf_dump_checkpoint("AFTER_EDR_LO_CAL");
     }
@@ -326,14 +339,11 @@ pub fn bt_rf_cal(dma_ch: impl Peripheral<P = impl Channel>) {
     let efuse_cal = unsafe { Efuse::new(crate::peripherals::EFUSEC::steal()) }
         .ok()
         .map(|e| *e.calibration());
-    let edr_pa_bm_opt = efuse_cal
-        .as_ref()
-        .and_then(|cal| apply_edr_power_cal(cal));
+    let edr_pa_bm_opt = efuse_cal.as_ref().and_then(apply_edr_power_cal);
     match &edr_pa_bm_opt {
         Some(pa_bm) => debug!(
             "EDR power cal applied: PA_BM=[{},{},{},{},{},{},{},{}]",
-            pa_bm[0], pa_bm[1], pa_bm[2], pa_bm[3],
-            pa_bm[4], pa_bm[5], pa_bm[6], pa_bm[7]
+            pa_bm[0], pa_bm[1], pa_bm[2], pa_bm[3], pa_bm[4], pa_bm[5], pa_bm[6], pa_bm[7]
         ),
         None => debug!("EDR power cal skipped (no eFUSE data or flag not set)"),
     }
@@ -357,8 +367,10 @@ pub fn bt_rf_cal(dma_ch: impl Peripheral<P = impl Channel>) {
     let txdc_cal = txdc::txdc_cal_full(edr_pa_bm_opt, cal_enable, dma_ch);
     debug!(
         "TXDC cal[0]: oi={} oq={} c0={} c1={}",
-        txdc_cal.points[0].offset_i, txdc_cal.points[0].offset_q,
-        txdc_cal.points[0].coef0, txdc_cal.points[0].coef1
+        txdc_cal.points[0].offset_i,
+        txdc_cal.points[0].offset_q,
+        txdc_cal.points[0].coef0,
+        txdc_cal.points[0].coef1
     );
 
     // Restore VCO thresholds to normal mode after TXDC cal (SDK:4664-4673)

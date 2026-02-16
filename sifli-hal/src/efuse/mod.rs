@@ -138,12 +138,7 @@ fn read_bank_words(bank: u8) -> Result<[u32; 8], Error> {
     let org_vout = PMUC.hpsys_vout().read();
     let mut boosted_vout = org_vout;
     let mut value = boosted_vout.vout() as u32 + 3;
-    if value > 0xf {
-        value = 0xf;
-    }
-    if value < 0xe {
-        value = 0xe;
-    }
+    value = value.clamp(0xe, 0xf);
     boosted_vout.set_vout(value as u8);
     PMUC.hpsys_vout().write_value(boosted_vout);
     blocking_delay_us(20);

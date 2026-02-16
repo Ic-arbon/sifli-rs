@@ -19,21 +19,19 @@ compile_error!("You may not enable both `defmt` and `log` features.");
 /// (e.g., DLL not configured) should use `::core::panic!` directly.
 #[collapse_debuginfo(yes)]
 macro_rules! const_rcc_assert {
-    ($cond:expr, $msg:literal) => {
+    ($cond:expr, $msg:literal) => {{
+        #[cfg(not(feature = "unchecked-overclocking"))]
         {
-            #[cfg(not(feature = "unchecked-overclocking"))]
-            {
-                if !$cond {
-                    ::core::panic!($msg);
-                }
-            }
-            #[cfg(feature = "unchecked-overclocking")]
-            {
-                // Evaluate condition to suppress unused variable warnings
-                _ = $cond;
+            if !$cond {
+                ::core::panic!($msg);
             }
         }
-    };
+        #[cfg(feature = "unchecked-overclocking")]
+        {
+            // Evaluate condition to suppress unused variable warnings
+            _ = $cond;
+        }
+    }};
 }
 
 #[collapse_debuginfo(yes)]

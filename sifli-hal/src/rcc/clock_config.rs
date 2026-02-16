@@ -1,18 +1,18 @@
 //! Clock configuration, initialization, and runtime reconfiguration.
 
 use crate::cortex_m_blocking_delay_us;
-use crate::pac::{HPSYS_CFG, PMUC};
 use crate::pac::hpsys_rcc::vals::mux::Perisel;
 use crate::pac::{HPSYS_AON, HPSYS_RCC};
+use crate::pac::{HPSYS_CFG, PMUC};
 use crate::time::Hertz;
 use core::sync::atomic::{compiler_fence, Ordering};
 
+use super::{get_freqs, set_freqs};
 use super::{get_hclk_freq, read_hpsys_clocks_from_hw};
 use super::{
-    ClockMux, Clocks, Dll, DllStage, HclkPrescaler, Mpisel, PclkPrescaler, Rtcsel, Sysclk,
-    Usbsel, Wdtsel, Lpsel, Ticksel,
+    ClockMux, Clocks, Dll, DllStage, HclkPrescaler, Lpsel, Mpisel, PclkPrescaler, Rtcsel, Sysclk,
+    Ticksel, Usbsel, Wdtsel,
 };
-use super::{get_freqs, set_freqs};
 
 /// Clock configuration
 ///
@@ -248,42 +248,72 @@ impl ConfigBuilder {
 
         // Check frequency limits (bypassed when `unchecked-overclocking` is enabled)
         let sysclk_hz = self.get_sysclk_freq_hz();
-        const_rcc_assert!(sysclk_hz <= 384_000_000, "sysclk frequency exceeds maximum limit (384 MHz)");
+        const_rcc_assert!(
+            sysclk_hz <= 384_000_000,
+            "sysclk frequency exceeds maximum limit (384 MHz)"
+        );
         if let Sysclk::Dll1 = self.sys {
-            const_rcc_assert!(sysclk_hz >= 24_000_000, "DLL1 sysclk frequency below minimum limit (24 MHz)");
+            const_rcc_assert!(
+                sysclk_hz >= 24_000_000,
+                "DLL1 sysclk frequency below minimum limit (24 MHz)"
+            );
         }
 
         let hclk_hz = self.get_hclk_freq_hz();
-        const_rcc_assert!(hclk_hz <= 240_000_000, "HCLK frequency exceeds maximum DVFS limit (240 MHz)");
+        const_rcc_assert!(
+            hclk_hz <= 240_000_000,
+            "HCLK frequency exceeds maximum DVFS limit (240 MHz)"
+        );
 
         // Check PCLK frequency limits based on DVFS mode
         let pclk1_hz = hclk_hz >> (self.pdiv1 as u32);
         let pclk2_hz = hclk_hz >> (self.pdiv2 as u32);
         if hclk_hz > 48_000_000 {
             // S mode (enhanced): pclk1 ≤ 120 MHz, pclk2 ≤ 7.5 MHz
-            const_rcc_assert!(pclk1_hz <= 120_000_000, "PCLK1 exceeds S-mode limit (120 MHz), increase pdiv1");
-            const_rcc_assert!(pclk2_hz <= 7_500_000, "PCLK2 exceeds S-mode limit (7.5 MHz), increase pdiv2");
+            const_rcc_assert!(
+                pclk1_hz <= 120_000_000,
+                "PCLK1 exceeds S-mode limit (120 MHz), increase pdiv1"
+            );
+            const_rcc_assert!(
+                pclk2_hz <= 7_500_000,
+                "PCLK2 exceeds S-mode limit (7.5 MHz), increase pdiv2"
+            );
         } else {
             // D mode (basic): pclk1 ≤ 48 MHz, pclk2 ≤ 6 MHz
-            const_rcc_assert!(pclk1_hz <= 48_000_000, "PCLK1 exceeds D-mode limit (48 MHz), increase pdiv1");
-            const_rcc_assert!(pclk2_hz <= 6_000_000, "PCLK2 exceeds D-mode limit (6 MHz), increase pdiv2");
+            const_rcc_assert!(
+                pclk1_hz <= 48_000_000,
+                "PCLK1 exceeds D-mode limit (48 MHz), increase pdiv1"
+            );
+            const_rcc_assert!(
+                pclk2_hz <= 6_000_000,
+                "PCLK2 exceeds D-mode limit (6 MHz), increase pdiv2"
+            );
         }
 
         // Check DLL1 frequency range if configured
         if let Some(dll1) = self.dll1 {
             let dll1_freq = 24_000_000 * (dll1.stg.to_bits() as u32 + 1);
-            const_rcc_assert!(dll1_freq >= 24_000_000 && dll1_freq <= 384_000_000, "DLL1 frequency out of valid range (24-384 MHz)");
+            const_rcc_assert!(
+                dll1_freq >= 24_000_000 && dll1_freq <= 384_000_000,
+                "DLL1 frequency out of valid range (24-384 MHz)"
+            );
         }
 
         // Check DLL2 frequency range if configured
         if let Some(dll2) = self.dll2 {
             let dll2_freq = 24_000_000 * (dll2.stg.to_bits() as u32 + 1);
-            const_rcc_assert!(dll2_freq >= 24_000_000 && dll2_freq <= 384_000_000, "DLL2 frequency out of valid range (24-384 MHz)");
+            const_rcc_assert!(
+                dll2_freq >= 24_000_000 && dll2_freq <= 384_000_000,
+                "DLL2 frequency out of valid range (24-384 MHz)"
+            );
 
             // Check DLL2 vs DVFS mode limit
             let hclk_mhz = hclk_hz / 1_000_000;
             if hclk_mhz > 48 {
-                const_rcc_assert!(dll2_freq <= 288_000_000, "DLL2 frequency exceeds DVFS S-mode limit (288 MHz)");
+                const_rcc_assert!(
+                    dll2_freq <= 288_000_000,
+                    "DLL2 frequency exceeds DVFS S-mode limit (288 MHz)"
+                );
             }
         }
     }
@@ -311,7 +341,11 @@ impl ConfigBuilder {
 
     pub(crate) const fn get_hclk_freq_hz(&self) -> u32 {
         let s = self.get_sysclk_freq_hz();
-        if self.hdiv.0 == 0 { s } else { s / self.hdiv.0 as u32 }
+        if self.hdiv.0 == 0 {
+            s
+        } else {
+            s / self.hdiv.0 as u32
+        }
     }
 
     // Non-const versions for use in init() where Hertz operators are needed
@@ -617,7 +651,6 @@ pub(crate) unsafe fn init(config: Config) {
         HPSYS_RCC
             .csr()
             .modify(|w| w.set_sel_tick(config.mux.ticksel));
-
     }
 
     // Store the final clock frequencies for later access via clocks()

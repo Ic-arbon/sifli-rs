@@ -122,8 +122,7 @@ pub fn hal_patch_install(record_addr: usize) -> Result<u32, Error> {
     // Read header using unaligned access — the record may reside in a &[u8]
     // slice without alignment guarantee (unlike SDK's `const unsigned int[]`).
     let tag = unsafe { core::ptr::read_unaligned(record_addr as *const u32) };
-    let size_bytes =
-        unsafe { core::ptr::read_unaligned((record_addr + 4) as *const u32) };
+    let size_bytes = unsafe { core::ptr::read_unaligned((record_addr + 4) as *const u32) };
 
     // Verify magic tag
     if tag != PatchRegion::A3_MAGIC {
@@ -185,10 +184,8 @@ fn hal_patch_install_entries(entries_addr: usize, count: usize) -> Result<u32, E
     for i in 0..count {
         // Read entry using unaligned access (data may not be 4-byte aligned).
         let entry_offset = entries_addr + i * core::mem::size_of::<PatchEntry>();
-        let break_addr =
-            unsafe { core::ptr::read_unaligned(entry_offset as *const u32) };
-        let data =
-            unsafe { core::ptr::read_unaligned((entry_offset + 4) as *const u32) };
+        let break_addr = unsafe { core::ptr::read_unaligned(entry_offset as *const u32) };
+        let data = unsafe { core::ptr::read_unaligned((entry_offset + 4) as *const u32) };
 
         let addr_masked = break_addr & PATCH_ADDR_MASK;
 
@@ -383,8 +380,8 @@ fn install_letter(list: &[u8], bin: &[u8]) -> Result<(), Error> {
     // Reference: lcpu_patch_rev_b.c:60-66
     let header = [
         PatchRegion::LETTER_MAGIC,                      // magic: "PACH"
-        PatchRegion::LETTER_ENTRY_COUNT,                 // entry_count (fixed)
-        PatchRegion::LETTER_CODE_START_LCPU as u32 + 1,  // code_addr (LCPU address + Thumb bit)
+        PatchRegion::LETTER_ENTRY_COUNT,                // entry_count (fixed)
+        PatchRegion::LETTER_CODE_START_LCPU as u32 + 1, // code_addr (LCPU address + Thumb bit)
     ];
 
     let header_addr = PatchRegion::LETTER_BUF_START;

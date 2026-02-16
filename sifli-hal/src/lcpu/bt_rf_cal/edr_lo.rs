@@ -22,28 +22,24 @@ const MAX_LO_CAL_STEP: usize = 256;
 /// EDR TX 3G reference residual counts (79 channels).
 /// From SDK `ref_residual_cnt_tbl_tx_3g[]` (bt_rf_fulcal.c:228-309).
 static REF_RESIDUAL_CNT_TBL_TX_3G: [u16; 79] = [
-    30544, 30584, 30624, 30664, 30704, 30744, 30784, 30824, 30864, 30904,
-    30944, 30984, 31024, 31064, 31104, 31144, 31184, 31224, 31264, 31304,
-    31344, 31384, 31424, 31464, 31504, 31544, 31584, 31624, 31664, 31704,
-    31744, 31784, 31824, 31864, 31904, 31944, 31984, 32024, 32064, 32104,
-    32144, 32184, 32224, 32264, 32304, 32344, 32384, 32424, 32464, 32504,
-    32544, 32584, 32624, 32664, 32704, 32744, 32784, 32824, 32864, 32904,
-    32944, 32984, 33024, 33064, 33104, 33144, 33184, 33224, 33264, 33304,
-    33344, 33384, 33424, 33464, 33504, 33544, 33584, 33624, 33664,
+    30544, 30584, 30624, 30664, 30704, 30744, 30784, 30824, 30864, 30904, 30944, 30984, 31024,
+    31064, 31104, 31144, 31184, 31224, 31264, 31304, 31344, 31384, 31424, 31464, 31504, 31544,
+    31584, 31624, 31664, 31704, 31744, 31784, 31824, 31864, 31904, 31944, 31984, 32024, 32064,
+    32104, 32144, 32184, 32224, 32264, 32304, 32344, 32384, 32424, 32464, 32504, 32544, 32584,
+    32624, 32664, 32704, 32744, 32784, 32824, 32864, 32904, 32944, 32984, 33024, 33064, 33104,
+    33144, 33184, 33224, 33264, 33304, 33344, 33384, 33424, 33464, 33504, 33544, 33584, 33624,
+    33664,
 ];
 
 /// Initial DPSK gain values per channel (79 channels).
 /// From SDK `dpsk_gain[]` (bt_rf_fulcal.c:569-650).
 /// These are packed into the BT TX calibration table alongside VCO/OSLO results.
 pub(super) static DPSK_GAIN_INITIAL: [u8; 79] = [
-    0x3C, 0x3A, 0x3C, 0x3C, 0x3A, 0x3B, 0x3B, 0x3B, 0x3E, 0x3A,
-    0x3A, 0x3A, 0x39, 0x38, 0x39, 0x38, 0x38, 0x37, 0x37, 0x37,
-    0x36, 0x36, 0x35, 0x35, 0x34, 0x34, 0x33, 0x33, 0x33, 0x32,
-    0x32, 0x32, 0x31, 0x32, 0x32, 0x30, 0x30, 0x30, 0x2F, 0x30,
-    0x30, 0x2F, 0x2F, 0x2F, 0x2F, 0x2F, 0x2F, 0x2F, 0x2F, 0x30,
-    0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x31, 0x31, 0x31,
-    0x32, 0x32, 0x32, 0x33, 0x33, 0x34, 0x34, 0x35, 0x35, 0x36,
-    0x37, 0x37, 0x38, 0x38, 0x39, 0x39, 0x3A, 0x3A, 0x3A,
+    0x3C, 0x3A, 0x3C, 0x3C, 0x3A, 0x3B, 0x3B, 0x3B, 0x3E, 0x3A, 0x3A, 0x3A, 0x39, 0x38, 0x39, 0x38,
+    0x38, 0x37, 0x37, 0x37, 0x36, 0x36, 0x35, 0x35, 0x34, 0x34, 0x33, 0x33, 0x33, 0x32, 0x32, 0x32,
+    0x31, 0x32, 0x32, 0x30, 0x30, 0x30, 0x2F, 0x30, 0x30, 0x2F, 0x2F, 0x2F, 0x2F, 0x2F, 0x2F, 0x2F,
+    0x2F, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x31, 0x31, 0x31, 0x32, 0x32, 0x32, 0x33,
+    0x33, 0x34, 0x34, 0x35, 0x35, 0x36, 0x37, 0x37, 0x38, 0x38, 0x39, 0x39, 0x3A, 0x3A, 0x3A,
 ];
 
 // ============================================================
@@ -246,9 +242,15 @@ impl GpadcCalGuard {
 impl Drop for GpadcCalGuard {
     fn drop(&mut self) {
         // Restore original GPADC registers
-        GPADC.cfg_reg1().write_value(crate::pac::gpadc::regs::CfgReg1(self.saved_cfg1));
-        GPADC.ctrl_reg().write_value(crate::pac::gpadc::regs::CtrlReg(self.saved_ctrl));
-        GPADC.ctrl_reg2().write_value(crate::pac::gpadc::regs::CtrlReg2(self.saved_ctrl2));
+        GPADC
+            .cfg_reg1()
+            .write_value(crate::pac::gpadc::regs::CfgReg1(self.saved_cfg1));
+        GPADC
+            .ctrl_reg()
+            .write_value(crate::pac::gpadc::regs::CtrlReg(self.saved_ctrl));
+        GPADC
+            .ctrl_reg2()
+            .write_value(crate::pac::gpadc::regs::CtrlReg2(self.saved_ctrl2));
     }
 }
 
@@ -482,14 +484,18 @@ pub fn edr_lo_cal_full() -> EdrLoCalResult {
         "EDR VCO3G sweep: {} steps, capcode {}..{}",
         sweep_num,
         sweep_capcode[0],
-        if sweep_num > 0 { sweep_capcode[sweep_num - 1] } else { 0 }
+        if sweep_num > 0 {
+            sweep_capcode[sweep_num - 1]
+        } else {
+            0
+        }
     );
 
     // --- A5: 79-channel matching ---
     let mut result = EdrLoCalResult {
         idac: [0; 79],
         capcode: [0; 79],
-        oslo_fc: [3; 79],  // default FC=3 (used in initial SRAM write)
+        oslo_fc: [3; 79],    // default FC=3 (used in initial SRAM write)
         oslo_bm: [0x10; 79], // default BM=0x10
     };
 
@@ -738,17 +744,14 @@ fn store_initial_edr_table(result: &EdrLoCalResult) {
 
     for i in 0..79usize {
         let mut word: u32 = 0;
-        word |= result.capcode[i] as u32;                      // [7:0] PDX
-        word |= (result.idac[i] as u32) << 8;                  // [14:8] IDAC
-        word |= (3u32) << 16;                                  // [18:16] OSLO_FC default=3
-        word |= (0x10u32) << 20;                               // [24:20] OSLO_BM default=0x10
-        word |= (6u32) << 28;                                  // [31:28] TMXCAP default=6
+        word |= result.capcode[i] as u32; // [7:0] PDX
+        word |= (result.idac[i] as u32) << 8; // [14:8] IDAC
+        word |= (3u32) << 16; // [18:16] OSLO_FC default=3
+        word |= (0x10u32) << 20; // [24:20] OSLO_BM default=0x10
+        word |= (6u32) << 28; // [31:28] TMXCAP default=6
 
         unsafe {
-            core::ptr::write_volatile(
-                (base + bt_tx_addr + (i as u32) * 4) as *mut u32,
-                word,
-            );
+            core::ptr::write_volatile((base + bt_tx_addr + (i as u32) * 4) as *mut u32, word);
         }
     }
 }

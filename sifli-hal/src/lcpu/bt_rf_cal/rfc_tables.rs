@@ -5,11 +5,11 @@
 //! TXDC parameters (via `RD_DCCAL1`/`RD_DCCAL2`) from tables addressed by
 //! `CAL_ADDR_REG1/2/3`.
 
-use crate::pac::BT_RFC;
 #[cfg(feature = "edr-cal")]
 use super::edr_lo::{EdrLoCalResult, DPSK_GAIN_INITIAL};
-use super::vco::VcoCalResult;
 use super::txdc::{TxdcCalResult, NUM_POWER_LEVELS};
+use super::vco::VcoCalResult;
+use crate::pac::BT_RFC;
 
 /// Write VCO calibration tables (RX + TX) to RFC SRAM and update CAL_ADDR_REG1/REG2.
 ///
@@ -18,10 +18,7 @@ use super::txdc::{TxdcCalResult, NUM_POWER_LEVELS};
 /// parameters for the forced channel.
 ///
 /// Returns the next free SRAM offset (for TXDC tables).
-pub fn store_vco_cal_tables(
-    cmd_end_addr: u32,
-    vco_cal: &VcoCalResult,
-) -> u32 {
+pub fn store_vco_cal_tables(cmd_end_addr: u32, vco_cal: &VcoCalResult) -> u32 {
     let base = super::BT_RFC_MEM_BASE;
     let mut addr = cmd_end_addr;
 
@@ -197,10 +194,7 @@ pub fn store_edr_lo_cal_tables(edr_lo: &EdrLoCalResult) {
         word |= d0 | d1 | d2;
 
         unsafe {
-            core::ptr::write_volatile(
-                (base + bt_tx_addr + (i as u32) * 4) as *mut u32,
-                word,
-            );
+            core::ptr::write_volatile((base + bt_tx_addr + (i as u32) * 4) as *mut u32, word);
         }
     }
 }

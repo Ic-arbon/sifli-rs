@@ -11,24 +11,30 @@ use sifli_hal::lcdc::SpiConfig;
 use sifli_hal::time::mhz;
 use static_cell::StaticCell;
 
-use sifli_hal::{gpio, lcdc};
-use sifli_hal::rcc::{ConfigBuilder, Dll, Sysclk, DllStage};
 use sifli_hal::bind_interrupts;
+use sifli_hal::rcc::{ConfigBuilder, Dll, DllStage, Sysclk};
+use sifli_hal::{gpio, lcdc};
 
 use embedded_graphics::{
     framebuffer::{buffer_size, Framebuffer},
-    pixelcolor::{raw::{BigEndian, RawU16}, Rgb565},
-    prelude::*,
     image::{Image, ImageRaw},
     mono_font::{ascii::FONT_10X20, MonoTextStyle},
+    pixelcolor::{
+        raw::{BigEndian, RawU16},
+        Rgb565,
+    },
+    prelude::*,
     text::Text,
 };
 
 // Import the display driver modules
-use display_driver::{ColorFormat, DisplayDriver};
 use display_driver::bus::QspiFlashBus;
-use display_driver_co5300::{Co5300, spec::{PanelSpec, Co5300Spec}};
 use display_driver::panel::reset::LCDResetOption;
+use display_driver::{ColorFormat, DisplayDriver};
+use display_driver_co5300::{
+    spec::{Co5300Spec, PanelSpec},
+    Co5300,
+};
 
 const WIDTH: usize = 240;
 const HEIGHT: usize = 240;
@@ -49,14 +55,8 @@ impl Co5300Spec for MyCo5300 {
 
 // Framebuffer configuration
 // Using BigEndian for direct compatibility with the display controller's byte order
-type FramebufferType = Framebuffer<
-    Rgb565,
-    RawU16,
-    BigEndian,
-    WIDTH,
-    HEIGHT,
-    { buffer_size::<Rgb565>(WIDTH, HEIGHT) }
->;
+type FramebufferType =
+    Framebuffer<Rgb565, RawU16, BigEndian, WIDTH, HEIGHT, { buffer_size::<Rgb565>(WIDTH, HEIGHT) }>;
 
 static FB: StaticCell<FramebufferType> = StaticCell::new();
 
@@ -75,13 +75,14 @@ async fn main(_spawner: Spawner) {
 
     // 1. Hardware Initialization
     // 240MHz: DLL1 Freq = (stg + 1) * 24MHz -> Mul10 * 24 = 240
-    let config = sifli_hal::Config::default()
-        .with_rcc(const {
+    let config = sifli_hal::Config::default().with_rcc(
+        const {
             ConfigBuilder::new()
                 .with_sys(Sysclk::Dll1)
                 .with_dll1(Dll::new().with_stg(DllStage::Mul10))
                 .checked()
-        });
+        },
+    );
 
     let p = sifli_hal::init(config);
 
@@ -98,9 +99,7 @@ async fn main(_spawner: Spawner) {
     };
 
     let lcdc = lcdc::Lcdc::new_qspi(
-        p.LCDC1, Irqs,
-        p.PA2, p.PA3, p.PA4, p.PA5, p.PA6, p.PA7, p.PA8,
-        config
+        p.LCDC1, Irqs, p.PA2, p.PA3, p.PA4, p.PA5, p.PA6, p.PA7, p.PA8, config,
     );
 
     // Wrap the raw bus in the QspiFlashBus protocol layer (handles 0x02/0x32 prefixes)
@@ -115,7 +114,9 @@ async fn main(_spawner: Spawner) {
     info!("Initializing Display...");
     let mut display = DisplayDriver::builder(disp_bus, panel)
         .with_color_format(ColorFormat::RGB565)
-        .init(&mut Delay).await.unwrap();
+        .init(&mut Delay)
+        .await
+        .unwrap();
 
     display.set_brightness(200).await.unwrap();
 
@@ -127,17 +128,15 @@ async fn main(_spawner: Spawner) {
     fb.clear(Rgb565::WHITE).unwrap();
 
     // Load and draw image
-    let image_raw: ImageRaw<Rgb565, BigEndian> = ImageRaw::new(
-        include_bytes!("../../assets/ferris.raw"),
-        IMAGE_WIDTH
-    );
+    let image_raw: ImageRaw<Rgb565, BigEndian> =
+        ImageRaw::new(include_bytes!("../../assets/ferris.raw"), IMAGE_WIDTH);
 
     let image = Image::new(
         &image_raw,
         Point::new(
             ((WIDTH as i32) - (IMAGE_WIDTH as i32)) / 2,
             ((HEIGHT as i32) - (IMAGE_HEIGHT as i32)) / 2,
-        )
+        ),
     );
     image.draw(fb).unwrap();
 

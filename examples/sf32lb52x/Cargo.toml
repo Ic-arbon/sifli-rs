@@ -10,7 +10,6 @@ sifli-hal = { version = "0.1.1", path = "../../sifli-hal", features = [
   "sf32lb52x-lcpu",
   "defmt",
   "unstable-pac",
-  "usb",
   "time-driver-gptim2",
   "bt-hci",
 ] }
