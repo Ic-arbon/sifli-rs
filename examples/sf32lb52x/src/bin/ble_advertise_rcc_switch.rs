@@ -89,22 +89,27 @@ async fn main(_spawner: Spawner) {
     print_clocks("boot");
 
     // --- BLE initialization at default 240 MHz ---
-    let transport =
-        match IpcHciTransport::ble_init(p.MAILBOX1_CH1, Irqs, p.DMAC2_CH8, &LcpuConfig::default())
-            .await
-        {
-            Ok(t) => {
-                info!("BLE initialized");
-                t
+    let transport = match IpcHciTransport::ble_init(
+        p.LCPU,
+        p.MAILBOX1_CH1,
+        p.DMAC2_CH8,
+        Irqs,
+        &LcpuConfig::default(),
+    )
+    .await
+    {
+        Ok(t) => {
+            info!("BLE initialized");
+            t
+        }
+        Err(e) => {
+            error!("BLE init failed: {:?}", e);
+            cortex_m::asm::bkpt();
+            loop {
+                Timer::after_secs(1).await;
             }
-            Err(e) => {
-                error!("BLE init failed: {:?}", e);
-                cortex_m::asm::bkpt();
-                loop {
-                    Timer::after_secs(1).await;
-                }
-            }
-        };
+        }
+    };
 
     let controller: ExternalController<_, 4> = ExternalController::new(transport);
     let address = Address::random([0xC0, 0x12, 0x34, 0x56, 0x78, 0x9A]);

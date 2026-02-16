@@ -112,6 +112,8 @@ hcpu:
     clock: pclk
   - name: MAILBOX2
     enable_reset: false
+  - name: LCPU
+    enable_reset: false
 
 # Note: Some LCPU peripherals are not yet defined in PAC (sifli-pac).
 # Missing from PAC: LPSYS_PINMUX, USART4, USART5, LPSYS_SECU, PTC2, BTIM3, BTIM4,

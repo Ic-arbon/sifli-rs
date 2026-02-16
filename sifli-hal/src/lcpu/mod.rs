@@ -206,7 +206,9 @@ pub enum CoreId {
 //=============================================================================
 
 /// LCPU driver (blocking).
-pub struct Lcpu;
+pub struct Lcpu {
+    _lcpu: crate::PeripheralRef<'static, crate::peripherals::LCPU>,
+}
 
 impl fmt::Debug for Lcpu {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -216,8 +218,10 @@ impl fmt::Debug for Lcpu {
 
 impl Lcpu {
     /// Create a new blocking LCPU driver.
-    pub fn new() -> Self {
-        Self
+    pub fn new(lcpu: impl Peripheral<P = crate::peripherals::LCPU> + 'static) -> Self {
+        Self {
+            _lcpu: lcpu.into_ref(),
+        }
     }
 }
 
