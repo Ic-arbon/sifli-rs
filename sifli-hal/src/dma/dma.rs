@@ -204,7 +204,7 @@ impl AnyChannel {
 
         // In M2M mode CPAR is also a memory address, apply remap for flash addresses
         let peri_addr = if mem2mem {
-            Self::remap_addr(peri_addr as u32)
+            crate::to_system_bus_addr(peri_addr as _) as _
         } else {
             peri_addr as u32
         };
@@ -212,7 +212,7 @@ impl AnyChannel {
             .write_value(pac::dmac::regs::Cpar(peri_addr));
 
         r.cm0ar(channel_num)
-            .write_value(pac::dmac::regs::Cm0ar(Self::remap_addr(mem_addr as u32)));
+            .write_value(pac::dmac::regs::Cm0ar(crate::to_system_bus_addr(mem_addr as _) as _));
         r.cndtr(channel_num)
             .write_value(pac::dmac::regs::Cndtr(ndtr as _));
         r.cselr(channel_num / 4)
@@ -252,15 +252,6 @@ impl AnyChannel {
             self.id,
             options.interrupt_priority,
         );
-    }
-
-    /// Remap address for DMA bus access (flash addresses < 0x2000_0000 need offset).
-    fn remap_addr(addr: u32) -> u32 {
-        if addr >= 0x2000_0000 {
-            addr
-        } else {
-            addr + 0x5000_0000
-        }
     }
 
     fn start(&self) {
