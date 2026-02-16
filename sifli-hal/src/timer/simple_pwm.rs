@@ -193,7 +193,7 @@ impl<'d, T: GptimInstance> SimplePwm<'d, T> {
     /// This value depends on the configured frequency and timer clock.
     /// The duty cycle ranges from 0 (0%) to max_duty_cycle() (100%).
     pub fn max_duty_cycle(&self) -> u16 {
-        (self.inner.get_autoreload() + 1) as u16
+        self.inner.get_autoreload() + 1
     }
 
     /// Set PWM frequency
@@ -350,7 +350,7 @@ impl<'d, T: GptimInstance> SimplePwmChannel<'d, T> {
 
     /// Get max duty cycle value
     pub fn max_duty_cycle(&self) -> u16 {
-        (self.timer.get_autoreload() + 1) as u16
+        self.timer.get_autoreload() + 1
     }
 
     /// Set duty cycle

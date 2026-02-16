@@ -719,7 +719,7 @@ fn generate_signal_peripheral_nomux_impls(
 
         // Get signal suffix (LCDC1_SPI_RSTB -> RSTB) (laststr)
         // and convert to PascalCase (RSTB -> Rstb)
-        let raw_signal_suffix = func.function.split('_').last().unwrap_or("").to_lowercase();
+        let raw_signal_suffix = func.function.split('_').next_back().unwrap_or("").to_lowercase();
         let laststr_pascal = if !raw_signal_suffix.is_empty() {
             let mut chars = raw_signal_suffix.chars();
             match chars.next() {
@@ -951,7 +951,7 @@ fn generate_dma_impls(dma: &build_serde::Dma) -> TokenStream {
 
     // DMAC2 channels (0x80+) - LCPU side, no HCPU interrupt handling
     if let Some(lcpu) = &dma.lcpu {
-        for (_, controller) in &lcpu.controllers {
+        for controller in lcpu.controllers.values() {
             for i in 1..=controller.channel_total {
                 let channel_id = 0x80u8 + (i - 1);
                 match_arms.extend(quote! {

@@ -339,7 +339,7 @@ pub fn bt_rf_cal(dma_ch: impl Peripheral<P = impl Channel>) {
     let efuse_cal = unsafe { Efuse::new(crate::peripherals::EFUSEC::steal()) }
         .ok()
         .map(|e| *e.calibration());
-    let edr_pa_bm_opt = efuse_cal.as_ref().and_then(|cal| apply_edr_power_cal(cal));
+    let edr_pa_bm_opt = efuse_cal.as_ref().and_then(apply_edr_power_cal);
     match &edr_pa_bm_opt {
         Some(pa_bm) => debug!(
             "EDR power cal applied: PA_BM=[{},{},{},{},{},{},{},{}]",

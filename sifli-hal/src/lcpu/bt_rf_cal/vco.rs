@@ -211,14 +211,12 @@ fn acal_sequential(mut acal_cnt: u8) -> u8 {
             } else {
                 seq_acal_ful_cnt += 1;
             }
+        } else if acal_cnt < 0x3F {
+            acal_cnt += 1;
+            seq_acal_ful_cnt = 0;
         } else {
-            if acal_cnt < 0x3F {
-                acal_cnt += 1;
-                seq_acal_ful_cnt = 0;
-            } else {
-                seq_acal_ful_cnt += 1;
-                acal_cnt = 0x3F;
-            }
+            seq_acal_ful_cnt += 1;
+            acal_cnt = 0x3F;
         }
 
         if pre_acal_up_vld {
@@ -541,7 +539,7 @@ pub fn vco_cal_full() -> VcoCalResult {
         BT_RFC
             .vco_reg3()
             .write_value(crate::pac::bt_rfc::regs::VcoReg3(
-                ((result.capcode_tx[19] as u32) << 0) | ((result.idac_tx[19] as u32) << 8),
+                (result.capcode_tx[19] as u32) | ((result.idac_tx[19] as u32) << 8),
             ));
         BT_PHY.tx_hfp_cfg().modify(|w| {
             w.set_hfp_fcw(0x00);
@@ -596,7 +594,7 @@ pub fn vco_cal_full() -> VcoCalResult {
         BT_RFC
             .vco_reg3()
             .write_value(crate::pac::bt_rfc::regs::VcoReg3(
-                ((result.capcode_tx[59] as u32) << 0) | ((result.idac_tx[59] as u32) << 8),
+                (result.capcode_tx[59] as u32) | ((result.idac_tx[59] as u32) << 8),
             ));
         BT_PHY.tx_hfp_cfg().modify(|w| {
             w.set_hfp_fcw(0x00);

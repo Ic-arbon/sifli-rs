@@ -223,7 +223,7 @@ pub(super) fn configure_power_level(level: usize, config: &TxdcCalConfig) {
 
     // Configure TX DC CAL gain based on power level
     let dc_cal_gain = match level {
-        0 | 1 | 2 => 0x60,
+        0..=2 => 0x60,
         3 => 0x70,
         4 => 0x50,
         5 => 0x30,

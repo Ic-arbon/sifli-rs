@@ -525,7 +525,7 @@ impl<'d, T: Instance> Lcdc<'d, T, Spi> {
         buffer: &[u8],
     ) -> Result<(), Error> {
         debug_assert!(
-            buffer.as_ptr() as usize % 4 == 0,
+            (buffer.as_ptr() as usize).is_multiple_of(4),
             "Buffer address must be 4-byte aligned"
         );
 
@@ -615,7 +615,7 @@ impl<'d, T: Instance> Lcdc<'d, T, Spi> {
         let bpp = self.config.in_color_format.bpp() as usize;
         let len = buffer.len();
 
-        if len % bpp != 0 {
+        if !len.is_multiple_of(bpp) {
             return Err(Error::UnalignedData);
         }
 
@@ -790,9 +790,9 @@ impl<'d, T: Instance> DisplayBus for Lcdc<'d, T, Spi> {
             .iter()
             .fold(0u32, |acc, &byte| (acc << 8) | (byte as u32));
 
-        self.send_cmd(cmd_word, cmd.len() as u8, params.len() != 0)?;
+        self.send_cmd(cmd_word, cmd.len() as u8, !params.is_empty())?;
 
-        if params.len() > 0 {
+        if !params.is_empty() {
             params.chunks(4).enumerate().try_for_each(|(i, chunk)| {
                 let data_word = chunk
                     .iter()
