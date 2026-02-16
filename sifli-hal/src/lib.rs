@@ -35,7 +35,6 @@ pub mod time_driver;
 pub mod timer;
 #[allow(clippy::all)] // modified from embassy-stm32
 pub mod usart;
-#[cfg(feature = "usb")]
 pub mod usb;
 
 // Reexports
