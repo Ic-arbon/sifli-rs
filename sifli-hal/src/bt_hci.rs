@@ -98,7 +98,12 @@ impl<'a> LoggingReader<'a> {
 
     fn dump(&self, prefix: &str) {
         let end = self.pos.min(64);
-        debug!("[hci] {} ({} bytes): {:02X}", prefix, self.pos, &self.log[..end]);
+        debug!(
+            "[hci] {} ({} bytes): {:02X}",
+            prefix,
+            self.pos,
+            &self.log[..end]
+        );
     }
 }
 

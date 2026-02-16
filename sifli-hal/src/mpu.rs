@@ -53,12 +53,22 @@ pub(crate) unsafe fn init() {
 
     // Region 0: HPSYS SRAM non-cacheable.
     mpu.rnr.write(0);
-    mpu.rbar.write(mpu_rbar(0x2000_0000, MPU_RBAR_SH_NON, MPU_RBAR_AP_RW_ANY, false));
+    mpu.rbar.write(mpu_rbar(
+        0x2000_0000,
+        MPU_RBAR_SH_NON,
+        MPU_RBAR_AP_RW_ANY,
+        false,
+    ));
     mpu.rlar.write(mpu_rlar(0x2027_FFFF, 0));
 
     // Region 1: LPSYS SRAM non-cacheable.
     mpu.rnr.write(1);
-    mpu.rbar.write(mpu_rbar(0x203F_C000, MPU_RBAR_SH_NON, MPU_RBAR_AP_RW_ANY, false));
+    mpu.rbar.write(mpu_rbar(
+        0x203F_C000,
+        MPU_RBAR_SH_NON,
+        MPU_RBAR_AP_RW_ANY,
+        false,
+    ));
     mpu.rlar.write(mpu_rlar(0x204F_FFFF, 0));
 
     // Enable MPU: preserve default memory map (PRIVDEFENA) to prevent faults on uncovered regions.

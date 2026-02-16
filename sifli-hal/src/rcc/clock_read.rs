@@ -3,8 +3,8 @@
 //! These functions read the current clock frequencies directly from hardware registers.
 
 use super::{
-    Clocks, Mpisel, Sysclk, Usbsel, Wdtsel,
-    CLK_HRC48_FREQ, CLK_HXT48_FREQ, CLK_LRC10_FREQ, CLK_LRC32_FREQ,
+    Clocks, Mpisel, Sysclk, Usbsel, Wdtsel, CLK_HRC48_FREQ, CLK_HXT48_FREQ, CLK_LRC10_FREQ,
+    CLK_LRC32_FREQ,
 };
 use crate::pac::hpsys_rcc::vals::mux::Perisel;
 use crate::pac::{HPSYS_AON, HPSYS_RCC, PMUC};
@@ -25,7 +25,11 @@ pub(crate) fn get_hclk_freq() -> Option<Hertz> {
     let clk_sys = get_clk_sys_freq()?;
     let hdiv = HPSYS_RCC.cfgr().read().hdiv();
     // HDIV=0 means no division (same as HDIV=1)
-    if hdiv == 0 { Some(clk_sys) } else { Some(clk_sys / hdiv) }
+    if hdiv == 0 {
+        Some(clk_sys)
+    } else {
+        Some(clk_sys / hdiv)
+    }
 }
 
 /// Get current PCLK (APB1) frequency from hardware registers.

@@ -25,42 +25,40 @@ const MAX_LO_CAL_STEP: usize = 256;
 
 /// BLE RX 1M reference residual counts (40 channels)
 static REF_RESIDUAL_CNT_TBL_RX_1M: [u16; 40] = [
-    30485, 30565, 30645, 30725, 30805, 30885, 30965, 31045, 31125, 31205,
-    31285, 31365, 31445, 31525, 31605, 31685, 31765, 31845, 31925, 32005,
-    32085, 32165, 32245, 32325, 32405, 32485, 32565, 32645, 32725, 32805,
-    32885, 32965, 33045, 33125, 33205, 33285, 33365, 33445, 33525, 33605,
+    30485, 30565, 30645, 30725, 30805, 30885, 30965, 31045, 31125, 31205, 31285, 31365, 31445,
+    31525, 31605, 31685, 31765, 31845, 31925, 32005, 32085, 32165, 32245, 32325, 32405, 32485,
+    32565, 32645, 32725, 32805, 32885, 32965, 33045, 33125, 33205, 33285, 33365, 33445, 33525,
+    33605,
 ];
 
 /// BLE RX 2M reference residual counts (40 channels)
 static REF_RESIDUAL_CNT_TBL_RX_2M: [u16; 40] = [
-    30425, 30505, 30585, 30665, 30745, 30825, 30905, 30985, 31065, 31145,
-    31225, 31305, 31385, 31465, 31545, 31625, 31705, 31785, 31865, 31945,
-    32025, 32105, 32185, 32265, 32345, 32425, 32505, 32585, 32665, 32745,
-    32825, 32905, 32985, 33065, 33145, 33225, 33305, 33385, 33465, 33545,
+    30425, 30505, 30585, 30665, 30745, 30825, 30905, 30985, 31065, 31145, 31225, 31305, 31385,
+    31465, 31545, 31625, 31705, 31785, 31865, 31945, 32025, 32105, 32185, 32265, 32345, 32425,
+    32505, 32585, 32665, 32745, 32825, 32905, 32985, 33065, 33145, 33225, 33305, 33385, 33465,
+    33545,
 ];
 
 /// BT RX reference residual counts (79 channels)
 static REF_RESIDUAL_CNT_TBL_RX_BT: [u16; 79] = [
-    30445, 30485, 30525, 30565, 30605, 30645, 30685, 30725, 30765, 30805,
-    30845, 30885, 30925, 30965, 31005, 31045, 31085, 31125, 31165, 31205,
-    31245, 31285, 31325, 31365, 31405, 31445, 31485, 31525, 31565, 31605,
-    31645, 31685, 31725, 31765, 31805, 31845, 31885, 31925, 31965, 32005,
-    32045, 32085, 32125, 32165, 32205, 32245, 32285, 32325, 32365, 32405,
-    32445, 32485, 32525, 32565, 32605, 32645, 32685, 32725, 32765, 32805,
-    32845, 32885, 32925, 32965, 33005, 33045, 33085, 33125, 33165, 33205,
-    33245, 33285, 33325, 33365, 33405, 33445, 33485, 33525, 33565,
+    30445, 30485, 30525, 30565, 30605, 30645, 30685, 30725, 30765, 30805, 30845, 30885, 30925,
+    30965, 31005, 31045, 31085, 31125, 31165, 31205, 31245, 31285, 31325, 31365, 31405, 31445,
+    31485, 31525, 31565, 31605, 31645, 31685, 31725, 31765, 31805, 31845, 31885, 31925, 31965,
+    32005, 32045, 32085, 32125, 32165, 32205, 32245, 32285, 32325, 32365, 32405, 32445, 32485,
+    32525, 32565, 32605, 32645, 32685, 32725, 32765, 32805, 32845, 32885, 32925, 32965, 33005,
+    33045, 33085, 33125, 33165, 33205, 33245, 33285, 33325, 33365, 33405, 33445, 33485, 33525,
+    33565,
 ];
 
 /// TX reference residual counts (79 channels, used for both BLE TX and BT TX)
 static REF_RESIDUAL_CNT_TBL_TX: [u16; 79] = [
-    30545, 30585, 30625, 30665, 30705, 30745, 30785, 30825, 30865, 30905,
-    30945, 30985, 31025, 31065, 31105, 31145, 31185, 31225, 31265, 31305,
-    31345, 31385, 31425, 31465, 31505, 31545, 31585, 31625, 31665, 31705,
-    31745, 31785, 31825, 31865, 31905, 31945, 31985, 32025, 32065, 32105,
-    32145, 32185, 32225, 32265, 32305, 32345, 32385, 32425, 32465, 32505,
-    32545, 32585, 32625, 32665, 32705, 32745, 32785, 32825, 32865, 32905,
-    32945, 32985, 33025, 33065, 33105, 33145, 33185, 33225, 33265, 33305,
-    33345, 33385, 33425, 33465, 33505, 33545, 33585, 33625, 33665,
+    30545, 30585, 30625, 30665, 30705, 30745, 30785, 30825, 30865, 30905, 30945, 30985, 31025,
+    31065, 31105, 31145, 31185, 31225, 31265, 31305, 31345, 31385, 31425, 31465, 31505, 31545,
+    31585, 31625, 31665, 31705, 31745, 31785, 31825, 31865, 31905, 31945, 31985, 32025, 32065,
+    32105, 32145, 32185, 32225, 32265, 32305, 32345, 32385, 32425, 32465, 32505, 32545, 32585,
+    32625, 32665, 32705, 32745, 32785, 32825, 32865, 32905, 32945, 32985, 33025, 33065, 33105,
+    33145, 33185, 33225, 33265, 33305, 33345, 33385, 33425, 33465, 33505, 33545, 33585, 33625,
+    33665,
 ];
 
 // ============================================================
@@ -463,8 +461,16 @@ pub fn vco_cal_full() -> VcoCalResult {
         w.set_brf_vco_fkcal_en_lv(false);
     });
 
-    debug!("VCO sweep: {} steps, capcode {}..{}", sweep_num, sweep_capcode[0],
-           if sweep_num > 0 { sweep_capcode[sweep_num - 1] } else { 0 });
+    debug!(
+        "VCO sweep: {} steps, capcode {}..{}",
+        sweep_num,
+        sweep_capcode[0],
+        if sweep_num > 0 {
+            sweep_capcode[sweep_num - 1]
+        } else {
+            0
+        }
+    );
 
     // ---- Channel matching ----
     let mut result = VcoCalResult {
@@ -480,20 +486,40 @@ pub fn vco_cal_full() -> VcoCalResult {
     };
 
     search_closest(
-        &REF_RESIDUAL_CNT_TBL_RX_1M, &sweep_residual, &sweep_idac, &sweep_capcode,
-        sweep_num, &mut result.idac_rx_1m, &mut result.capcode_rx_1m,
+        &REF_RESIDUAL_CNT_TBL_RX_1M,
+        &sweep_residual,
+        &sweep_idac,
+        &sweep_capcode,
+        sweep_num,
+        &mut result.idac_rx_1m,
+        &mut result.capcode_rx_1m,
     );
     search_closest(
-        &REF_RESIDUAL_CNT_TBL_RX_2M, &sweep_residual, &sweep_idac, &sweep_capcode,
-        sweep_num, &mut result.idac_rx_2m, &mut result.capcode_rx_2m,
+        &REF_RESIDUAL_CNT_TBL_RX_2M,
+        &sweep_residual,
+        &sweep_idac,
+        &sweep_capcode,
+        sweep_num,
+        &mut result.idac_rx_2m,
+        &mut result.capcode_rx_2m,
     );
     search_closest(
-        &REF_RESIDUAL_CNT_TBL_RX_BT, &sweep_residual, &sweep_idac, &sweep_capcode,
-        sweep_num, &mut result.idac_rx_bt, &mut result.capcode_rx_bt,
+        &REF_RESIDUAL_CNT_TBL_RX_BT,
+        &sweep_residual,
+        &sweep_idac,
+        &sweep_capcode,
+        sweep_num,
+        &mut result.idac_rx_bt,
+        &mut result.capcode_rx_bt,
     );
     search_closest(
-        &REF_RESIDUAL_CNT_TBL_TX, &sweep_residual, &sweep_idac, &sweep_capcode,
-        sweep_num, &mut result.idac_tx, &mut result.capcode_tx,
+        &REF_RESIDUAL_CNT_TBL_TX,
+        &sweep_residual,
+        &sweep_idac,
+        &sweep_capcode,
+        sweep_num,
+        &mut result.idac_tx,
+        &mut result.capcode_tx,
     );
 
     // ---- KCAL computation (ch 0-39, pivot ch19) ----
@@ -512,10 +538,11 @@ pub fn vco_cal_full() -> VcoCalResult {
             w.set_lfp_fcw_sel(false);
         });
         // Set ch19 PDX/IDAC
-        BT_RFC.vco_reg3().write_value(crate::pac::bt_rfc::regs::VcoReg3(
-            ((result.capcode_tx[19] as u32) << 0) |
-            ((result.idac_tx[19] as u32) << 8)
-        ));
+        BT_RFC
+            .vco_reg3()
+            .write_value(crate::pac::bt_rfc::regs::VcoReg3(
+                ((result.capcode_tx[19] as u32) << 0) | ((result.idac_tx[19] as u32) << 8),
+            ));
         BT_PHY.tx_hfp_cfg().modify(|w| {
             w.set_hfp_fcw(0x00);
             w.set_hfp_fcw_sel(false);
@@ -535,11 +562,16 @@ pub fn vco_cal_full() -> VcoCalResult {
             w.set_brf_fkcal_cnt_en_lv(false);
         });
 
-        let kcal_norm = if pmax > pmin { const_a / (pmax - pmin) } else { 200 };
+        let kcal_norm = if pmax > pmin {
+            const_a / (pmax - pmin)
+        } else {
+            200
+        };
         debug!("KCAL 0-39: norm={} pmin={} pmax={}", kcal_norm, pmin, pmax);
 
         for i in 0..40usize {
-            let p_delta = (REF_RESIDUAL_CNT_TBL_TX[i] as i32) - (REF_RESIDUAL_CNT_TBL_TX[19] as i32);
+            let p_delta =
+                (REF_RESIDUAL_CNT_TBL_TX[i] as i32) - (REF_RESIDUAL_CNT_TBL_TX[19] as i32);
             let factor = 1.0f32 - 3.0 * (p_delta as f32) * const_b;
             result.kcal[i] = ((kcal_norm as f32) * factor) as u16;
         }
@@ -561,10 +593,11 @@ pub fn vco_cal_full() -> VcoCalResult {
             w.set_lfp_fcw_sel(false);
         });
         // Set ch59 PDX/IDAC
-        BT_RFC.vco_reg3().write_value(crate::pac::bt_rfc::regs::VcoReg3(
-            ((result.capcode_tx[59] as u32) << 0) |
-            ((result.idac_tx[59] as u32) << 8)
-        ));
+        BT_RFC
+            .vco_reg3()
+            .write_value(crate::pac::bt_rfc::regs::VcoReg3(
+                ((result.capcode_tx[59] as u32) << 0) | ((result.idac_tx[59] as u32) << 8),
+            ));
         BT_PHY.tx_hfp_cfg().modify(|w| {
             w.set_hfp_fcw(0x00);
             w.set_hfp_fcw_sel(false);
@@ -587,11 +620,16 @@ pub fn vco_cal_full() -> VcoCalResult {
             w.set_brf_vco_fkcal_en_lv(false);
         });
 
-        let kcal_norm = if pmax > pmin { const_a / (pmax - pmin) } else { 200 };
+        let kcal_norm = if pmax > pmin {
+            const_a / (pmax - pmin)
+        } else {
+            200
+        };
         debug!("KCAL 40-78: norm={} pmin={} pmax={}", kcal_norm, pmin, pmax);
 
         for i in 40..79usize {
-            let p_delta = (REF_RESIDUAL_CNT_TBL_TX[i] as i32) - (REF_RESIDUAL_CNT_TBL_TX[59] as i32);
+            let p_delta =
+                (REF_RESIDUAL_CNT_TBL_TX[i] as i32) - (REF_RESIDUAL_CNT_TBL_TX[59] as i32);
             let factor = 1.0f32 - 3.0 * (p_delta as f32) * const_b;
             result.kcal[i] = ((kcal_norm as f32) * factor) as u16;
         }

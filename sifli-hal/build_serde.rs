@@ -1,8 +1,8 @@
-use std::fmt;
 use std::collections::BTreeMap;
+use std::fmt;
 
+use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
-use serde::de::{self, Visitor, MapAccess};
 
 // ---------- pinmux_signals.yaml ----------
 
@@ -14,7 +14,10 @@ pub struct PinmuxSignals {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SignalDefinition {
     pub name: String,
-    #[serde(default = "default_peripheral_nomux", skip_serializing_if = "is_peripheral_nomux")]
+    #[serde(
+        default = "default_peripheral_nomux",
+        skip_serializing_if = "is_peripheral_nomux"
+    )]
     pub r#type: SignalType,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub signals: Vec<String>,
@@ -38,7 +41,6 @@ fn default_peripheral_nomux() -> SignalType {
 fn is_peripheral_nomux(signal_type: &SignalType) -> bool {
     *signal_type == SignalType::PeripheralNomux
 }
-
 
 // ---------- pinmux.yaml ----------
 
@@ -140,8 +142,8 @@ pub struct ClockDomain {
 // ---------- HPSYS_xxx.yaml ----------
 
 // Some code in this file is copied from [chiptool](https://github.com/embassy-rs/chiptool/blob/main/src/ir.rs)
-// and is used under the MIT License with some simplifications and modifications.  
-// Since [chiptool](https://github.com/embassy-rs/chiptool/) is not published on 
+// and is used under the MIT License with some simplifications and modifications.
+// Since [chiptool](https://github.com/embassy-rs/chiptool/) is not published on
 // [crates.io](https://crates.io), we cannot directly depend on it.
 #[derive(Default, Clone, Debug, PartialEq)]
 pub struct IR {
@@ -207,7 +209,6 @@ pub struct Field {
     pub bit_offset: u8,
     pub bit_size: u32,
 }
-
 
 // ---------- interrupts.yaml ----------
 

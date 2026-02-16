@@ -135,7 +135,6 @@ pub struct NoDma;
 
 impl_peripheral!(NoDma);
 
-
 // codegen will generate the following implementations
 // We use this instead of `InterruptHandler` for the avaliblity of `AnyChannel`.
 

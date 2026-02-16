@@ -16,19 +16,18 @@
 #![no_main]
 
 use defmt::*;
-use {defmt_rtt as _, panic_probe as _};
-use static_cell::StaticCell;
 use embassy_executor::Spawner;
+use static_cell::StaticCell;
+use {defmt_rtt as _, panic_probe as _};
 
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::driver::EndpointError;
 use embassy_usb::UsbDevice;
 
 use sifli_hal::bind_interrupts;
-use sifli_hal::rcc::{Dll, DllStage, Sysclk};
 use sifli_hal::rcc::Usbsel;
-use sifli_hal::usb::{Driver, InterruptHandler, Instance};
-
+use sifli_hal::rcc::{Dll, DllStage, Sysclk};
+use sifli_hal::usb::{Driver, Instance, InterruptHandler};
 
 bind_interrupts!(struct Irqs {
     USBC => InterruptHandler<sifli_hal::peripherals::USBC>;
@@ -44,15 +43,16 @@ async fn main(spawner: Spawner) {
     // Configure 240MHz system clock using DLL1
     // DLL1 Freq = (stg + 1) * 24MHz = (9 + 1) * 24MHz = 240MHz
     // DLL2 for USB at 240MHz, USB = 240MHz / 4 = 60MHz (required by USB PHY)
-    let config = sifli_hal::Config::default()
-        .with_rcc(const {
+    let config = sifli_hal::Config::default().with_rcc(
+        const {
             sifli_hal::rcc::ConfigBuilder::new()
                 .with_sys(Sysclk::Dll1)
                 .with_dll1(Dll::new().with_stg(DllStage::Mul10))
                 .with_dll2(Dll::new().with_stg(DllStage::Mul10))
                 .with_mux(sifli_hal::rcc::ClockMux::new().with_usbsel(Usbsel::Dll2))
                 .checked()
-        });
+        },
+    );
 
     let p = sifli_hal::init(config);
 

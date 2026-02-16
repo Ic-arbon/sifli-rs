@@ -4,9 +4,9 @@ use core::marker::PhantomData;
 use core::mem::ManuallyDrop;
 use embassy_hal_internal::{into_ref, Peripheral, PeripheralRef};
 
+use super::{Channel, GptimInstance, Instance};
 use crate::pac::gptim::Gptim;
 use crate::time::Hertz;
-use super::{Channel, Instance, GptimInstance};
 
 /// Output compare mode
 #[derive(Clone, Copy, Debug)]
@@ -241,7 +241,8 @@ impl<'d, T: GptimInstance> Timer<'d, T> {
                 duty,
                 ccr_addr as *mut u16,
                 TransferOptions::default(),
-            ).blocking_wait();  // Block until complete
+            )
+            .blocking_wait(); // Block until complete
         }
 
         // Restore Update DMA state
@@ -273,4 +274,3 @@ pub(crate) fn calculate_frequency_16bit(timer_clk: Hertz, target_freq: Hertz) ->
 
     ((psc - 1) as u16, (arr - 1) as u16)
 }
-

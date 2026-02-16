@@ -21,7 +21,6 @@ pub use crate::pac::lpsys_rcc::vals as lpsys_vals;
 
 use crate::time::Hertz;
 
-
 // TODO: should we split this into `RccEnable` and `RccReset` ?
 pub(crate) trait SealedRccEnableReset {
     fn rcc_enable() {}
@@ -81,7 +80,6 @@ pub fn enable_and_reset_with_cs<T: RccEnableReset>(_cs: CriticalSection) {
     T::rcc_reset();
 }
 
-
 /// Enables and resets peripheral `T`.
 ///
 /// # Safety
@@ -111,7 +109,6 @@ pub fn disable_with_cs<T: RccEnableReset>(_cs: CriticalSection) {
 pub fn disable<T: RccEnableReset>() {
     critical_section::with(|cs| disable_with_cs::<T>(cs));
 }
-
 
 pub fn test_print_clocks() {
     let clocks = clocks();

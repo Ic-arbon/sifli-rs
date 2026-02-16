@@ -297,11 +297,11 @@ pub fn rom_config(config: &RomConfig, ctrl: &super::config::ControllerConfig) ->
                     | (1 << 5)        // sleep_enabled
                     | (1 << 4)        // sleep_mode
                     | (1 << 2)        // lld_prog_delay
-                    | (1 << 1),       // controller_enable
+                    | (1 << 1), // controller_enable
                 controller_enable_bit: 0x03, // BLE(1) | BT(2)
                 lld_prog_delay: ctrl.lld_prog_delay,
-                default_sleep_mode: 0,       // No sleep
-                default_sleep_enabled: 0,    // Disable sleep
+                default_sleep_mode: 0,    // No sleep
+                default_sleep_enabled: 0, // Disable sleep
                 default_xtal_enabled: ctrl.xtal_enabled as u8,
                 default_rc_cycle: ctrl.rc_cycle,
                 is_fpga: 0,

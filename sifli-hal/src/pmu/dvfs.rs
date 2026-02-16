@@ -33,13 +33,33 @@ const fn build_lp_ulpmcr(ram_rm: u8, ram_ra: u8, ram_wa: u8, rom_rm: u8) -> LpUl
 
 pub const HPSYS_DVFS_CONFIG: [HpsysDvfsConfig; 4] = [
     // LDO: 0.9V, BUCK: 1.0V
-    HpsysDvfsConfig { ldo_offset: -5, ldo: 0x6, buck: 0x9, ulpmcr: build_ulpmcr(0, 1, 6, 0) },
+    HpsysDvfsConfig {
+        ldo_offset: -5,
+        ldo: 0x6,
+        buck: 0x9,
+        ulpmcr: build_ulpmcr(0, 1, 6, 0),
+    },
     // LDO: 1.0V, BUCK: 1.1V
-    HpsysDvfsConfig { ldo_offset: -3, ldo: 0x8, buck: 0xA, ulpmcr: build_ulpmcr(1, 1, 6, 1) },
+    HpsysDvfsConfig {
+        ldo_offset: -3,
+        ldo: 0x8,
+        buck: 0xA,
+        ulpmcr: build_ulpmcr(1, 1, 6, 1),
+    },
     // LDO: 1.1V, BUCK: 1.25V
-    HpsysDvfsConfig { ldo_offset:  0, ldo: 0xB, buck: 0xD, ulpmcr: build_ulpmcr(3, 0, 4, 3) },
+    HpsysDvfsConfig {
+        ldo_offset: 0,
+        ldo: 0xB,
+        buck: 0xD,
+        ulpmcr: build_ulpmcr(3, 0, 4, 3),
+    },
     // LDO: 1.2V, BUCK: 1.35V
-    HpsysDvfsConfig { ldo_offset:  2, ldo: 0xD, buck: 0xF, ulpmcr: build_ulpmcr(3, 0, 4, 3) },
+    HpsysDvfsConfig {
+        ldo_offset: 2,
+        ldo: 0xD,
+        buck: 0xF,
+        ulpmcr: build_ulpmcr(3, 0, 4, 3),
+    },
 ];
 
 pub const HPSYS_DLL2_LIMIT: [u32; 4] = [
@@ -121,15 +141,19 @@ pub(crate) fn config_hcpu_dvfs<F>(
     config_clock: F,
 ) where
     F: FnOnce(),
-{ 
+{
     let current_dvfs_mode = HpsysDvfsMode::from_hertz(current_hclk_freq).unwrap();
     let target_dvfs_mode = HpsysDvfsMode::from_hertz(target_hclk_freq).unwrap();
 
     use HpsysDvfsMode::*;
     match (current_dvfs_mode, target_dvfs_mode) {
         (D0, D0) | (D1, D1) | (S0, S0) | (S1, S1) => config_clock(),
-        (D0, S0) | (D1, S0) | (D1, S1) | (D0, S1) => switch_hcpu_dvfs_d2s(target_dvfs_mode, config_clock),
-        (S0, D0) | (S0, D1) | (S1, D0) | (S1, D1) => switch_hcpu_dvfs_s2d(target_dvfs_mode, config_clock),
+        (D0, S0) | (D1, S0) | (D1, S1) | (D0, S1) => {
+            switch_hcpu_dvfs_d2s(target_dvfs_mode, config_clock)
+        }
+        (S0, D0) | (S0, D1) | (S1, D0) | (S1, D1) => {
+            switch_hcpu_dvfs_s2d(target_dvfs_mode, config_clock)
+        }
         (S0, S1) | (S1, S0) => {
             // switch between different S mode
             // TODO: HAL_RCC_HCPU_ClockSelect(RCC_CLK_MOD_SYS, RCC_SYSCLK_HRC48);
@@ -138,14 +162,14 @@ pub(crate) fn config_hcpu_dvfs<F>(
             // buck need 250us to settle
             crate::cortex_m_blocking_delay_us(250);
             config_clock();
-        },
+        }
         (D0, D1) | (D1, D0) => {
             // TODO:
             // switch between different D mode
             // Why?
             // switch_hcpu_dvfs_d2s(target_dvfs_mode, todo_set_to_144);
             switch_hcpu_dvfs_s2d(target_dvfs_mode, config_clock);
-        },
+        }
     }
 }
 
@@ -153,22 +177,20 @@ fn config_hcpu_sx_mode_volt(target_dvfs_mode: HpsysDvfsMode) {
     let dvfs_config = target_dvfs_mode.get_config();
 
     // configure BUCK voltage
-    PMUC.buck_vout().modify(| w| {
+    PMUC.buck_vout().modify(|w| {
         w.set_vout(dvfs_config.buck);
     });
 
     // configure LDO voltage
     // TODO: use efuse value (HAL_PMU_GetHpsysVoutRef[2])
     let vout_ref = dvfs_config.ldo;
-    PMUC.hpsys_vout().modify(| w| {
+    PMUC.hpsys_vout().modify(|w| {
         w.set_vout(vout_ref);
     });
 }
 
-fn switch_hcpu_dvfs_d2s<F>(
-    target_dvfs_mode: HpsysDvfsMode,
-    config_clock: F,
-) where
+fn switch_hcpu_dvfs_d2s<F>(target_dvfs_mode: HpsysDvfsMode, config_clock: F)
+where
     F: FnOnce(),
 {
     config_hcpu_sx_mode_volt(target_dvfs_mode);
@@ -181,15 +203,15 @@ fn switch_hcpu_dvfs_d2s<F>(
     crate::cortex_m_blocking_delay_us(250);
 
     // Set memory timing parameters for S-mode before switching to high frequency
-    HPSYS_CFG.ulpmcr().write_value(target_dvfs_mode.get_config().ulpmcr);
+    HPSYS_CFG
+        .ulpmcr()
+        .write_value(target_dvfs_mode.get_config().ulpmcr);
 
     config_clock();
 }
 
-fn switch_hcpu_dvfs_s2d<F>(
-    target_dvfs_mode: HpsysDvfsMode,
-    config_clock: F,
-) where
+fn switch_hcpu_dvfs_s2d<F>(target_dvfs_mode: HpsysDvfsMode, config_clock: F)
+where
     F: FnOnce(),
 {
     let dvfs_config = target_dvfs_mode.get_config();

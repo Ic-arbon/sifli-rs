@@ -76,12 +76,24 @@ pub(super) fn bt_rf_opt_cal() {
 
     // --- IQ modulation gain tables ---
     // SDK does direct register writes for these multi-field registers
-    BT_PHY.tx_if_mod_cfg3().write_value(crate::pac::bt_phy::regs::TxIfModCfg3(0x8055_5555));
-    BT_PHY.tx_if_mod_cfg5().write_value(crate::pac::bt_phy::regs::TxIfModCfg5(0x6855_5555));
-    BT_PHY.tx_if_mod_cfg6().write_value(crate::pac::bt_phy::regs::TxIfModCfg6(0x4444_4444));
-    BT_PHY.tx_if_mod_cfg7().write_value(crate::pac::bt_phy::regs::TxIfModCfg7(0x5050_5044));
-    BT_PHY.tx_dpsk_cfg1().write_value(crate::pac::bt_phy::regs::TxDpskCfg1(0x4444_4444));
-    BT_PHY.tx_dpsk_cfg2().write_value(crate::pac::bt_phy::regs::TxDpskCfg2(0x5050_5044));
+    BT_PHY
+        .tx_if_mod_cfg3()
+        .write_value(crate::pac::bt_phy::regs::TxIfModCfg3(0x8055_5555));
+    BT_PHY
+        .tx_if_mod_cfg5()
+        .write_value(crate::pac::bt_phy::regs::TxIfModCfg5(0x6855_5555));
+    BT_PHY
+        .tx_if_mod_cfg6()
+        .write_value(crate::pac::bt_phy::regs::TxIfModCfg6(0x4444_4444));
+    BT_PHY
+        .tx_if_mod_cfg7()
+        .write_value(crate::pac::bt_phy::regs::TxIfModCfg7(0x5050_5044));
+    BT_PHY
+        .tx_dpsk_cfg1()
+        .write_value(crate::pac::bt_phy::regs::TxDpskCfg1(0x4444_4444));
+    BT_PHY
+        .tx_dpsk_cfg2()
+        .write_value(crate::pac::bt_phy::regs::TxDpskCfg2(0x5050_5044));
 
     // --- Mixer phase ---
     BT_PHY.mixer_cfg1().modify(|w| {
@@ -129,12 +141,14 @@ pub(super) fn bt_rf_opt_cal() {
     });
 
     // --- TED (Timing Error Detector) ---
-    BT_PHY.ted_cfg1().write_value(crate::pac::bt_phy::regs::TedCfg1(
-        (0x02 << 0)   // TED_MU_F_U
+    BT_PHY
+        .ted_cfg1()
+        .write_value(crate::pac::bt_phy::regs::TedCfg1(
+            (0x02 << 0)   // TED_MU_F_U
         | (0x04 << 4) // TED_MU_P_U
         | (0x03 << 8) // TED_MU_F_BR
-        | (0x05 << 12) // TED_MU_P_BR
-    ));
+        | (0x05 << 12), // TED_MU_P_BR
+        ));
 
     // --- PKT detect threshold (BR) ---
     BT_PHY.pktdet_cfg2().modify(|w| {
@@ -216,11 +230,15 @@ pub(super) fn bt_rf_opt_cal() {
     });
 
     // --- NOTCH filter (set 2) ---
-    BT_PHY.notch_cfg6().write_value(crate::pac::bt_phy::regs::NotchCfg6(0x400000));
+    BT_PHY
+        .notch_cfg6()
+        .write_value(crate::pac::bt_phy::regs::NotchCfg6(0x400000));
     BT_PHY.notch_cfg8().modify(|w| {
         w.set_chnl_notch_en2_1(0x40);
     });
-    BT_PHY.notch_cfg9().write_value(crate::pac::bt_phy::regs::NotchCfg9(0x400000));
+    BT_PHY
+        .notch_cfg9()
+        .write_value(crate::pac::bt_phy::regs::NotchCfg9(0x400000));
     BT_PHY.notch_cfg11().modify(|w| {
         w.set_chnl_notch_en2_2(0x40);
     });

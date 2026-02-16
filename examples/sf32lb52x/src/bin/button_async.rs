@@ -3,14 +3,13 @@
 //! Note: This example is simplified.
 //! When using EXTI as a button input in an application, debouncing is mandatory!
 
-
 #![no_std]
 #![no_main]
 
 use defmt::*;
 use defmt_rtt as _;
-use panic_probe as _;
 use embassy_executor::Spawner;
+use panic_probe as _;
 
 use sifli_hal::gpio::{Input, Level, Output, Pull};
 

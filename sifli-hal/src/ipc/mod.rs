@@ -227,7 +227,8 @@ impl interrupt::typelevel::Handler<interrupt::typelevel::MAILBOX2_CH1> for Inter
         }
 
         // Clear interrupt
-        regs.icr(0).write_value(crate::pac::mailbox::regs::Ixr(misr as u32));
+        regs.icr(0)
+            .write_value(crate::pac::mailbox::regs::Ixr(misr as u32));
 
         fence(Ordering::SeqCst);
 
@@ -356,7 +357,8 @@ impl<'d> Ipc<'d> {
             {
                 let mb2 = crate::pac::MAILBOX2;
                 mb2.ier(0).modify(|w| w.0 |= qid_mask as u32);
-                mb2.icr(0).write_value(crate::pac::mailbox::regs::Ixr(qid_mask as u32));
+                mb2.icr(0)
+                    .write_value(crate::pac::mailbox::regs::Ixr(qid_mask as u32));
             }
 
             Ok(IpcQueue {

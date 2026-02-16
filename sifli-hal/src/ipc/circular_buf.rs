@@ -97,8 +97,7 @@ impl CircularBufPtrExt for *const CircularBuf {
 
     #[inline]
     unsafe fn buffer_size(self) -> usize {
-        (ptr::read_volatile(ptr::addr_of!((*self).buffer_size)) as i32)
-            .max(0) as usize
+        (ptr::read_volatile(ptr::addr_of!((*self).buffer_size)) as i32).max(0) as usize
     }
 
     #[inline]
@@ -265,4 +264,3 @@ impl CircularBufMutPtrExt for *mut CircularBuf {
         length
     }
 }
-

@@ -3,8 +3,8 @@
 //! Contains the register-level setup and teardown sequences for TX DC offset
 //! calibration. These are separated from the algorithm logic in `txdc.rs`.
 
-use crate::pac::{BT_MAC, BT_PHY, BT_RFC};
 use super::txdc::TxdcCalConfig;
+use crate::pac::{BT_MAC, BT_PHY, BT_RFC};
 
 /// Configure hardware for TXDC calibration.
 ///

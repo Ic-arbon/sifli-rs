@@ -243,7 +243,8 @@ macro_rules! impl_mailbox_channel {
                 if misr == 0 {
                     return;
                 }
-                regs.icr($ch - 1).write_value(crate::pac::mailbox::regs::Ixr(misr as u32));
+                regs.icr($ch - 1)
+                    .write_value(crate::pac::mailbox::regs::Ixr(misr as u32));
                 $state.pending_bits.fetch_or(misr, Ordering::SeqCst);
                 $state.waker.wake();
             }

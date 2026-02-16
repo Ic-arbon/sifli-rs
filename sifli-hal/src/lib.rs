@@ -11,32 +11,32 @@ mod macros;
 
 mod utils;
 
-pub mod rcc;
-pub mod gpio;
-pub mod timer;
-pub mod time;
-pub mod pmu;
-pub mod patch;
-pub mod syscfg;
-pub mod efuse;
-#[allow(clippy::all)] // modified from embassy-stm32
-pub mod usart;
 pub mod adc;
-pub mod lcdc;
-#[allow(clippy::all)] // modified from embassy-stm32
-pub mod dma;
-pub mod mailbox;
-#[cfg(feature = "sf32lb52x")]
-pub mod ipc;
-#[cfg(feature = "usb")]
-pub mod usb;
-pub mod rng;
-pub mod lcpu;
-pub(crate) mod lpaon;
-#[cfg(feature = "_time-driver")]
-pub mod time_driver;
 #[cfg(feature = "bt-hci")]
 pub mod bt_hci;
+#[allow(clippy::all)] // modified from embassy-stm32
+pub mod dma;
+pub mod efuse;
+pub mod gpio;
+#[cfg(feature = "sf32lb52x")]
+pub mod ipc;
+pub mod lcdc;
+pub mod lcpu;
+pub(crate) mod lpaon;
+pub mod mailbox;
+pub mod patch;
+pub mod pmu;
+pub mod rcc;
+pub mod rng;
+pub mod syscfg;
+pub mod time;
+#[cfg(feature = "_time-driver")]
+pub mod time_driver;
+pub mod timer;
+#[allow(clippy::all)] // modified from embassy-stm32
+pub mod usart;
+#[cfg(feature = "usb")]
+pub mod usb;
 
 // Reexports
 pub use embassy_hal_internal::{into_ref, Peripheral, PeripheralRef};
@@ -71,8 +71,8 @@ pub mod mode {
 
 /// HAL configuration for SiFli
 pub mod config {
-    use crate::rcc;
     use crate::interrupt;
+    use crate::rcc;
 
     /// HAL configuration passed when initializing.
     #[non_exhaustive]
@@ -130,7 +130,6 @@ pub fn init(config: Config) -> Peripherals {
         critical_section::with(|cs| {
             dma::init(cs);
         });
-
     }
     p
 }
@@ -141,9 +140,7 @@ fn system_init() {
         let mut cp = cortex_m::Peripherals::steal();
 
         // enable CP0/CP1/CP2 Full Access
-        cp.SCB.cpacr.modify(|r| {
-            r | (0b111111)
-        });
+        cp.SCB.cpacr.modify(|r| r | (0b111111));
 
         // Consistent with SDK `mpu_config()`: invalidate stale I-cache before MPU/Cache configuration.
         #[cfg(target_arch = "arm")]
