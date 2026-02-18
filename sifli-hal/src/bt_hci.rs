@@ -254,18 +254,19 @@ impl IpcHciTransport {
     /// }
     /// ```
     pub async fn ble_init(
+        lcpu_peri: impl Peripheral<P = peripherals::LCPU> + 'static,
         mailbox: impl Peripheral<P = peripherals::MAILBOX1_CH1>,
+        dma_ch: impl Peripheral<P = impl Channel>,
         irq: impl interrupt::typelevel::Binding<
             interrupt::typelevel::MAILBOX2_CH1,
             ipc::InterruptHandler,
         >,
-        dma_ch: impl Peripheral<P = impl Channel>,
         config: &LcpuConfig,
     ) -> Result<Self, BleInitError> {
         let mut ipc_driver = ipc::Ipc::new(mailbox, irq, ipc::Config::default());
         let queue = ipc_driver.open_queue(ipc::QueueConfig::qid0_hci())?;
         let (mut rx, tx) = queue.split();
-        let lcpu = Lcpu::new();
+        let lcpu = Lcpu::new(lcpu_peri);
         lcpu.ble_power_on(config, dma_ch, &mut rx).await?;
         Ok(Self::from_parts(rx, tx))
     }

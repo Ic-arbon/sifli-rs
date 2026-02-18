@@ -51,19 +51,24 @@ async fn main(_spawner: embassy_executor::Spawner) {
     info!("=== BLE Advertise Example ===");
 
     // 1. BLE startup (IPC + LCPU power-on + HCI transport)
-    let transport =
-        match IpcHciTransport::ble_init(p.MAILBOX1_CH1, Irqs, p.DMAC2_CH8, &LcpuConfig::default())
-            .await
-        {
-            Ok(t) => t,
-            Err(e) => {
-                error!("BLE init failed: {:?}", e);
-                cortex_m::asm::bkpt();
-                loop {
-                    Timer::after_secs(1).await;
-                }
+    let transport = match IpcHciTransport::ble_init(
+        p.LCPU,
+        p.MAILBOX1_CH1,
+        p.DMAC2_CH8,
+        Irqs,
+        &LcpuConfig::default(),
+    )
+    .await
+    {
+        Ok(t) => t,
+        Err(e) => {
+            error!("BLE init failed: {:?}", e);
+            cortex_m::asm::bkpt();
+            loop {
+                Timer::after_secs(1).await;
             }
-        };
+        }
+    };
     info!("LCPU BLE is ready");
 
     // 2. Create HCI controller
