@@ -7,7 +7,7 @@ use super::{
     CLK_LRC32_FREQ,
 };
 use crate::pac::hpsys_rcc::vals::mux::Perisel;
-use crate::pac::{HPSYS_AON, HPSYS_RCC, PMUC};
+use crate::pac::{AUDCODEC, HPSYS_AON, HPSYS_RCC, PMUC};
 use crate::time::Hertz;
 
 /// Get current sysclk frequency from hardware registers.
@@ -153,6 +153,30 @@ pub(crate) fn get_clk_mpi2_freq() -> Option<Hertz> {
     }
 }
 
+/// Get Audio PLL clock frequency from hardware registers.
+///
+/// Reads AUDCODEC PLL_CFG0 and PLL_CFG3 to determine if the PLL is active
+/// and what frequency it is producing.
+pub(crate) fn get_clk_aud_pll_freq() -> Option<Hertz> {
+    let cfg0 = AUDCODEC.pll_cfg0().read();
+    if !cfg0.en_ana() {
+        return None;
+    }
+
+    // Fout = [(FCW+3) + SDIN/2^20] × 6MHz
+    let cfg3 = AUDCODEC.pll_cfg3().read();
+    let fcw = cfg3.fcw() as u64;
+    let sdin = cfg3.sdin() as u64;
+    // Use integer math: freq = ((fcw+3) * 2^20 + sdin) * 6_000_000 / 2^20
+    let freq = ((fcw + 3) * (1 << 20) + sdin) * 6_000_000 / (1 << 20);
+    Some(Hertz(freq as u32))
+}
+
+/// Get Audio PLL / 16 clock frequency from hardware registers.
+pub(crate) fn get_clk_aud_pll_div16_freq() -> Option<Hertz> {
+    get_clk_aud_pll_freq().map(|f| Hertz(f.0 / 16))
+}
+
 /// Read current HPSYS clock frequencies from hardware and build a `Clocks` struct.
 ///
 /// Used by both `init()` and `reconfigure_sysclk()` to build `Clocks` from hardware state.
@@ -171,8 +195,7 @@ pub(crate) fn read_hpsys_clocks_from_hw() -> Clocks {
         clk_rtc: get_clk_rtc_freq().into(),
         clk_mpi1: get_clk_mpi1_freq().into(),
         clk_mpi2: get_clk_mpi2_freq().into(),
-        // Audio PLL is managed by AUDCODEC driver, default to None here
-        clk_aud_pll: None.into(),
-        clk_aud_pll_div16: None.into(),
+        clk_aud_pll: get_clk_aud_pll_freq().into(),
+        clk_aud_pll_div16: get_clk_aud_pll_div16_freq().into(),
     }
 }

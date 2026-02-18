@@ -12,12 +12,16 @@ mod macros;
 mod utils;
 
 pub mod adc;
+pub mod aud_pll;
+pub mod audprc;
 #[cfg(feature = "bt-hci")]
 pub mod bt_hci;
 #[allow(clippy::all)] // modified from embassy-stm32
 pub mod dma;
 pub mod efuse;
 pub mod gpio;
+pub mod i2s;
+pub mod pdm;
 #[cfg(feature = "sf32lb52x")]
 pub mod ipc;
 pub mod lcdc;
