@@ -59,7 +59,7 @@ impl AudPllFreq {
         match self {
             Self::Mhz49_152 => 201327,
             Self::Mhz45_1584 => 551970,
-            Self::Mhz44_1 => 0x5999A,
+            Self::Mhz44_1 => 366_874,
         }
     }
 }
@@ -293,6 +293,8 @@ fn vco_calibrate() {
         }
         delta >>= 1;
     }
+    // Re-measure to ensure best_cnt corresponds to current fc_vco
+    best_cnt = measure_vco(fc_vco);
 
     // Phase 2: Neighbor refinement — test fc_vco-1, fc_vco, fc_vco+1
     let fc_min = fc_vco.saturating_sub(1);
