@@ -9,15 +9,48 @@
 
 use crate::pac::{BT_MAC, BT_PHY, BT_RFC, GPADC, HPSYS_CFG};
 
+use super::consts::*;
 use super::vco;
 
 // ============================================================
-// Constants
+// EDR LO 3GHz calibration constants
 // ============================================================
 
+/// Residual count upper threshold for 3GHz VCO binary search.
 const RESIDUAL_CNT_VTH_3G: u32 = 33670;
+
+/// Residual count lower threshold for 3GHz VCO linear sweep termination.
 const RESIDUAL_CNT_VTL_3G: u32 = 30530;
-const MAX_LO_CAL_STEP: usize = 256;
+
+/// FKCAL counter divider for 3GHz VCO calibration.
+const FKCAL_DIVN_3G: u16 = 11520;
+
+/// OSLO frequency control default value.
+const OSLO_FC_DEFAULT: u8 = 3;
+
+/// OSLO bias magnitude initial value for binary search.
+const OSLO_BM_INITIAL: u8 = 0x10;
+
+/// OSLO BM binary search initial step size.
+const BM_SEARCH_STEP: u8 = 0x8;
+
+/// Default TMXCAP selection value written to calibration table.
+pub(super) const TMXCAP_DEFAULT: u32 = 6;
+
+/// GPADC conversion width for OSLO calibration.
+const GPADC_CONV_WIDTH: u16 = 252;
+
+/// GPADC sampling width for OSLO calibration.
+const GPADC_SAMP_WIDTH: u16 = 239;
+
+/// GPADC data sampling delay for OSLO calibration.
+const GPADC_SAMP_DLY: u8 = 7;
+
+/// Number of GPADC slots (slot 0 enabled, slots 1-7 disabled).
+const GPADC_SLOT_COUNT: usize = 8;
+
+/// OSLO BM binary search iterations (5 = ceil(log2(0x10/0x8)) + margin).
+const OSLO_BM_SEARCH_STEPS: usize = 5;
 
 /// EDR TX 3G reference residual counts (79 channels).
 /// From SDK `ref_residual_cnt_tbl_tx_3g[]` (bt_rf_fulcal.c:228-309).
@@ -65,8 +98,8 @@ pub struct EdrLoCalResult {
 /// ACAL binary search for VCO3G.
 /// Writes IDAC to EDR_CAL_REG1, reads vco3g feedback bits from VCO_REG2.
 fn acal_binary_search_3g() -> u8 {
-    let mut acal_cnt: u8 = 0x40;
-    let acal_cnt_fs: u8 = 0x40;
+    let mut acal_cnt: u8 = IDAC_INITIAL;
+    let acal_cnt_fs: u8 = IDAC_FS;
 
     BT_RFC.edr_cal_reg1().modify(|w| {
         w.set_brf_edr_vco_idac_lv(acal_cnt);
@@ -111,7 +144,7 @@ fn acal_sequential_3g(mut acal_cnt: u8) -> u8 {
         w.set_brf_lo_open_lv(true);
     });
 
-    while seq_acal_jump_cnt < 4 && seq_acal_ful_cnt < 2 {
+    while seq_acal_jump_cnt < SEQ_ACAL_JUMP_LIMIT && seq_acal_ful_cnt < SEQ_ACAL_FULL_LIMIT {
         BT_RFC.edr_cal_reg1().modify(|w| {
             w.set_brf_edr_vco_idac_lv(acal_cnt);
         });
@@ -128,14 +161,12 @@ fn acal_sequential_3g(mut acal_cnt: u8) -> u8 {
             } else {
                 seq_acal_ful_cnt += 1;
             }
+        } else if acal_cnt < IDAC_MAX {
+            acal_cnt += 1;
+            seq_acal_ful_cnt = 0;
         } else {
-            if acal_cnt < 0x3F {
-                acal_cnt += 1;
-                seq_acal_ful_cnt = 0;
-            } else {
-                seq_acal_ful_cnt += 1;
-                acal_cnt = 0x3F;
-            }
+            seq_acal_ful_cnt += 1;
+            acal_cnt = IDAC_MAX;
         }
 
         if pre_acal_up_vld {
@@ -184,22 +215,20 @@ impl GpadcCalGuard {
             w.set_anau_gpadc_ldoref_en(true);
         });
 
-        // Set data sampling delay = 7
         GPADC.ctrl_reg().modify(|w| {
-            w.set_data_samp_dly(7);
+            w.set_data_samp_dly(GPADC_SAMP_DLY);
         });
 
-        // Set CONV_WIDTH=252, SAMP_WIDTH=239
         GPADC.ctrl_reg2().write(|w| {
-            w.set_conv_width(252);
-            w.set_samp_width(239);
+            w.set_conv_width(GPADC_CONV_WIDTH);
+            w.set_samp_width(GPADC_SAMP_WIDTH);
         });
 
         // Enable SLOT0, disable SLOT1-7
         GPADC.slot(0).modify(|w| {
             w.set_slot_en(true);
         });
-        for i in 1..8 {
+        for i in 1..GPADC_SLOT_COUNT {
             GPADC.slot(i).modify(|w| {
                 w.set_slot_en(false);
             });
@@ -221,7 +250,7 @@ impl GpadcCalGuard {
         });
 
         // Poll for completion (timeout ~1ms at 48MHz)
-        for _ in 0..50000u32 {
+        for _ in 0..50_000u32 {
             if GPADC.gpadc_irq().read().gpadc_irsr() {
                 break;
             }
@@ -304,17 +333,15 @@ pub fn edr_lo_cal_full() -> EdrLoCalResult {
         w.set_brf_lo_iary_en_lv(true);
     });
 
-    // Set ACAL thresholds: VL=5, VH=7, INCFCAL VL=2, VH=5
     BT_RFC.vco_reg2().modify(|w| {
-        w.set_brf_vco_acal_vl_sel_lv(0x5);
-        w.set_brf_vco_acal_vh_sel_lv(0x7);
-        w.set_brf_vco_incfcal_vl_sel_lv(0x2);
-        w.set_brf_vco_incfcal_vh_sel_lv(0x5);
+        w.set_brf_vco_acal_vl_sel_lv(VCO_ACAL_VL_NORMAL);
+        w.set_brf_vco_acal_vh_sel_lv(VCO_ACAL_VH_NORMAL);
+        w.set_brf_vco_incfcal_vl_sel_lv(VCO_INCFCAL_VL);
+        w.set_brf_vco_incfcal_vh_sel_lv(VCO_INCFCAL_VH);
     });
 
-    // Set LDO VREF
     BT_RFC.vco_reg1().modify(|w| {
-        w.set_brf_vco_ldo_vref_lv(0xA);
+        w.set_brf_vco_ldo_vref_lv(VCO_LDO_VREF);
     });
 
     // Enable VCO3G
@@ -332,7 +359,7 @@ pub fn edr_lo_cal_full() -> EdrLoCalResult {
     // --- A2: Configure FBDV for 3G ---
     // Key differences from BLE VCO: MOD_STG=1 (not 2), SDM_CLK_SEL=0 (not 1), DIVN=11520 (not 7680)
     BT_RFC.fbdv_reg1().modify(|w| {
-        w.set_brf_fbdv_mod_stg_lv(1);
+        w.set_brf_fbdv_mod_stg_lv(FBDV_MOD_STG_3G);
         w.set_brf_sdm_clk_sel_lv(false);
         w.set_brf_fbdv_en_lv(true);
     });
@@ -341,18 +368,16 @@ pub fn edr_lo_cal_full() -> EdrLoCalResult {
         w.set_brf_vco_fkcal_en_lv(true);
     });
     BT_RFC.fbdv_reg2().modify(|w| {
-        w.set_brf_fkcal_cnt_divn_lv(11520);
+        w.set_brf_fkcal_cnt_divn_lv(FKCAL_DIVN_3G);
     });
 
-    // Set LFP_FCW
     BT_PHY.tx_lfp_cfg().modify(|w| {
-        w.set_lfp_fcw(0x08);
+        w.set_lfp_fcw(LFP_FCW_CAL);
         w.set_lfp_fcw_sel(false);
     });
 
-    // Initial PDX = 0x80
     BT_RFC.edr_cal_reg1().modify(|w| {
-        w.set_brf_edr_vco_pdx_lv(0x80);
+        w.set_brf_edr_vco_pdx_lv(PDX_INITIAL);
     });
 
     // FBDV reset sequence
@@ -378,14 +403,13 @@ pub fn edr_lo_cal_full() -> EdrLoCalResult {
         w.set_brf_pfdcp_en_lv(true);
     });
 
-    // Initial IDAC = 0x40
     BT_RFC.edr_cal_reg1().modify(|w| {
-        w.set_brf_edr_vco_idac_lv(0x40);
+        w.set_brf_edr_vco_idac_lv(IDAC_INITIAL);
     });
 
     // --- A3: FCAL binary search (8 iterations) ---
-    let mut fcal_cnt: u8 = 0x80;
-    let fcal_cnt_fs: u8 = 0x80;
+    let mut fcal_cnt: u8 = PDX_INITIAL;
+    let fcal_cnt_fs: u8 = PDX_FS;
 
     let mut idac0: u8 = 0;
     let mut idac1: u8 = 0;
@@ -393,8 +417,8 @@ pub fn edr_lo_cal_full() -> EdrLoCalResult {
     let mut capcode1: u8 = 0;
     let mut p0: u32 = 0;
     let mut p1: u32 = 0;
-    let mut error0: u32 = 0xFFFF_FFFF;
-    let mut error1: u32 = 0xFFFF_FFFF;
+    let mut error0: u32 = u32::MAX;
+    let mut error1: u32 = u32::MAX;
 
     for i in 1..9u32 {
         let acal_cnt = acal_binary_search_3g();
@@ -495,8 +519,8 @@ pub fn edr_lo_cal_full() -> EdrLoCalResult {
     let mut result = EdrLoCalResult {
         idac: [0; 79],
         capcode: [0; 79],
-        oslo_fc: [3; 79],    // default FC=3 (used in initial SRAM write)
-        oslo_bm: [0x10; 79], // default BM=0x10
+        oslo_fc: [OSLO_FC_DEFAULT; 79],
+        oslo_bm: [OSLO_BM_INITIAL; 79],
     };
 
     vco::search_closest(
@@ -531,7 +555,6 @@ pub fn edr_lo_cal_full() -> EdrLoCalResult {
     BT_MAC.dmradiocntl1().modify(|w| {
         w.set_force_tx_val(false);
     });
-    crate::cortex_m_blocking_delay_us(50);
     BT_MAC.dmradiocntl1().modify(|w| {
         w.set_force_tx(false);
     });
@@ -568,13 +591,12 @@ pub fn edr_lo_cal_full() -> EdrLoCalResult {
         w.set_brf_lodistedr_en_lv(true);
     });
 
-    // OSLO cal settings: enable PKDET + FCAL, initial BM=0x10
     BT_RFC.oslo_reg().modify(|w| {
         w.set_brf_oslo_pkdet_en_lv(true);
         w.set_brf_oslo_fcal_en_lv(true);
     });
     BT_RFC.edr_cal_reg1().modify(|w| {
-        w.set_brf_oslo_bm_lv(0x10);
+        w.set_brf_oslo_bm_lv(OSLO_BM_INITIAL);
     });
 
     // --- B3: Save GPADC state and configure for OSLO ---
@@ -613,8 +635,8 @@ pub fn edr_lo_cal_full() -> EdrLoCalResult {
             w.set_brf_oslo_fc_lv(best_fc);
         });
 
-        let mut bm: u8 = 0x10;
-        let mut bm_step: u8 = 0x8;
+        let mut bm: u8 = OSLO_BM_INITIAL;
+        let mut bm_step: u8 = BM_SEARCH_STEP;
         BT_RFC.edr_cal_reg1().modify(|w| {
             w.set_brf_oslo_bm_lv(bm);
         });
@@ -628,7 +650,7 @@ pub fn edr_lo_cal_full() -> EdrLoCalResult {
         });
         crate::cortex_m_blocking_delay_us(40);
 
-        for _ in 0..5 {
+        for _ in 0..OSLO_BM_SEARCH_STEPS {
             let acal_cmp = BT_RFC.oslo_reg().read().brf_oslo_acal_cmp_lv();
             if acal_cmp {
                 bm = bm.saturating_sub(bm_step);
@@ -647,7 +669,6 @@ pub fn edr_lo_cal_full() -> EdrLoCalResult {
         BT_MAC.dmradiocntl1().modify(|w| {
             w.set_force_tx_val(false);
         });
-        crate::cortex_m_blocking_delay_us(50);
     }
 
     // ================================================================
@@ -700,7 +721,7 @@ pub fn edr_lo_cal_full() -> EdrLoCalResult {
     });
     BT_RFC.fbdv_reg1().modify(|w| {
         w.set_brf_fbdv_rstb_lv(true);
-        w.set_brf_fbdv_mod_stg_lv(2);
+        w.set_brf_fbdv_mod_stg_lv(FBDV_MOD_STG_5G);
         w.set_brf_sdm_clk_sel_lv(true);
     });
     BT_RFC.pfdcp_reg().modify(|w| {
@@ -746,9 +767,9 @@ fn store_initial_edr_table(result: &EdrLoCalResult) {
         let mut word: u32 = 0;
         word |= result.capcode[i] as u32; // [7:0] PDX
         word |= (result.idac[i] as u32) << 8; // [14:8] IDAC
-        word |= (3u32) << 16; // [18:16] OSLO_FC default=3
-        word |= (0x10u32) << 20; // [24:20] OSLO_BM default=0x10
-        word |= (6u32) << 28; // [31:28] TMXCAP default=6
+        word |= (OSLO_FC_DEFAULT as u32) << 16; // [18:16] OSLO_FC
+        word |= (OSLO_BM_INITIAL as u32) << 20; // [24:20] OSLO_BM
+        word |= TMXCAP_DEFAULT << 28; // [31:28] TMXCAP
 
         unsafe {
             core::ptr::write_volatile((base + bt_tx_addr + (i as u32) * 4) as *mut u32, word);

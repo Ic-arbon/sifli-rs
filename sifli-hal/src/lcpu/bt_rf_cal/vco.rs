@@ -15,13 +15,53 @@
 
 use crate::pac::{BT_PHY, BT_RFC};
 
+use super::consts::*;
+
 // ============================================================
-// Reference frequency tables (from SDK bt_rf_fulcal.c)
+// VCO 5GHz calibration constants
 // ============================================================
 
+/// Residual count upper threshold for 5GHz VCO binary search.
 const RESIDUAL_CNT_VTH: u32 = 33864;
+
+/// Residual count lower threshold for 5GHz VCO linear sweep termination.
 const RESIDUAL_CNT_VTL: u32 = 30224;
-const MAX_LO_CAL_STEP: usize = 256;
+
+/// FKCAL counter divider for 5GHz VCO calibration.
+const FKCAL_DIVN_5G: u16 = 7680;
+
+/// FKCAL counter divider for KCAL computation.
+const FKCAL_DIVN_KCAL: u16 = 17280;
+
+/// KCAL normalization constant (216 * 2048).
+const KCAL_CONST_A: u32 = 216 * 2048;
+
+/// KCAL frequency correction factor for channels 0-39 (pivot ch19).
+const KCAL_CONST_B_LOW: f32 = 1.0 / 96800.0;
+
+/// KCAL frequency correction factor for channels 40-78 (pivot ch59).
+const KCAL_CONST_B_HIGH: f32 = 1.0 / 98400.0;
+
+/// KCAL fallback normalization value when pmax <= pmin.
+const KCAL_DEFAULT_NORM: u32 = 200;
+
+/// KCAL frequency correction multiplier used in the per-channel factor formula.
+const KCAL_FREQ_MULTIPLIER: f32 = 3.0;
+
+/// HFP_FCW minimum value (for KCAL pmin measurement).
+const HFP_FCW_MIN: u8 = 0x00;
+
+/// HFP_FCW maximum value (for KCAL pmax measurement).
+const HFP_FCW_MAX: u8 = 0x3F;
+
+/// PA LDO voltage reference selection for PACAL.
+const PA_LDO_VREF_SEL: u8 = 0x0E;
+
+/// PA unit selection for PACAL.
+const PA_UNIT_SEL: u8 = 0x01;
+
+/// PA buffer load selection for PACAL.
+const PA_BUFLOAD_SEL: u8 = 1;
 
 /// BLE RX 1M reference residual counts (40 channels)
 static REF_RESIDUAL_CNT_TBL_RX_1M: [u16; 40] = [
@@ -135,7 +175,7 @@ pub(super) fn get_fbdv_cnt() -> u32 {
     });
     crate::cortex_m_blocking_delay_us(10);
     // Poll for ready with timeout
-    for _ in 0..10000 {
+    for _ in 0..10_000 {
         if BT_RFC.fbdv_reg1().read().brf_fkcal_cnt_rdy_lv() {
             break;
         }
@@ -146,8 +186,8 @@ pub(super) fn get_fbdv_cnt() -> u32 {
 /// ACAL binary search (used during initial binary FCAL).
 /// Returns calibrated IDAC value.
 fn acal_binary_search() -> u8 {
-    let mut acal_cnt: u8 = 0x40;
-    let acal_cnt_fs: u8 = 0x40;
+    let mut acal_cnt: u8 = IDAC_INITIAL;
+    let acal_cnt_fs: u8 = IDAC_FS;
 
     BT_RFC.vco_reg3().modify(|w| {
         w.set_brf_vco_idac_lv(acal_cnt);
@@ -193,7 +233,7 @@ fn acal_sequential(mut acal_cnt: u8) -> u8 {
         w.set_brf_lo_open_lv(true);
     });
 
-    while seq_acal_jump_cnt < 4 && seq_acal_ful_cnt < 2 {
+    while seq_acal_jump_cnt < SEQ_ACAL_JUMP_LIMIT && seq_acal_ful_cnt < SEQ_ACAL_FULL_LIMIT {
         BT_RFC.vco_reg3().modify(|w| {
             w.set_brf_vco_idac_lv(acal_cnt);
         });
@@ -211,12 +251,12 @@ fn acal_sequential(mut acal_cnt: u8) -> u8 {
             } else {
                 seq_acal_ful_cnt += 1;
             }
-        } else if acal_cnt < 0x3F {
+        } else if acal_cnt < IDAC_MAX {
             acal_cnt += 1;
             seq_acal_ful_cnt = 0;
         } else {
             seq_acal_ful_cnt += 1;
-            acal_cnt = 0x3F;
+            acal_cnt = IDAC_MAX;
         }
 
         if pre_acal_up_vld {
@@ -292,8 +332,8 @@ pub fn vco_cal_full() -> VcoCalResult {
         w.set_brf_lo_iary_en_lv(true);
     });
     BT_RFC.vco_reg2().modify(|w| {
-        w.set_brf_vco_acal_vl_sel_lv(0x1);
-        w.set_brf_vco_acal_vh_sel_lv(0x3);
+        w.set_brf_vco_acal_vl_sel_lv(VCO_ACAL_VL_CAL);
+        w.set_brf_vco_acal_vh_sel_lv(VCO_ACAL_VH_CAL);
     });
     BT_RFC.vco_reg1().modify(|w| {
         w.set_brf_vco5g_en_lv(true);
@@ -307,37 +347,37 @@ pub fn vco_cal_full() -> VcoCalResult {
         w.set_brf_lo_open_lv(true);
     });
     BT_PHY.tx_hfp_cfg().modify(|w| {
-        w.set_hfp_fcw(0x07);
+        w.set_hfp_fcw(HFP_FCW_CAL);
         w.set_hfp_fcw_sel(false);
     });
     BT_RFC.vco_reg3().modify(|w| {
-        w.set_brf_vco_idac_lv(0x40);
+        w.set_brf_vco_idac_lv(IDAC_INITIAL);
     });
 
     // ---- FCAL binary search ----
-    let mut fcal_cnt: u8 = 0x80;
-    let fcal_cnt_fs: u8 = 0x80;
+    let mut fcal_cnt: u8 = PDX_INITIAL;
+    let fcal_cnt_fs: u8 = PDX_FS;
 
     BT_RFC.fbdv_reg1().modify(|w| {
         w.set_brf_fbdv_en_lv(true);
         w.set_brf_sdm_clk_sel_lv(true);
-        w.set_brf_fbdv_mod_stg_lv(2);
+        w.set_brf_fbdv_mod_stg_lv(FBDV_MOD_STG_5G);
     });
     BT_RFC.vco_reg2().modify(|w| {
         w.set_brf_vco_fkcal_en_lv(true);
     });
     BT_RFC.fbdv_reg2().modify(|w| {
-        w.set_brf_fkcal_cnt_divn_lv(7680);
+        w.set_brf_fkcal_cnt_divn_lv(FKCAL_DIVN_5G);
     });
     BT_PHY.tx_lfp_cfg().modify(|w| {
-        w.set_lfp_fcw(0x08);
+        w.set_lfp_fcw(LFP_FCW_CAL);
         w.set_lfp_fcw_sel(false);
     });
     BT_RFC.vco_reg3().modify(|w| {
-        w.set_brf_vco_pdx_lv(0x80);
+        w.set_brf_vco_pdx_lv(PDX_INITIAL);
     });
     BT_PHY.tx_hfp_cfg().modify(|w| {
-        w.set_hfp_fcw(0x07);
+        w.set_hfp_fcw(HFP_FCW_CAL);
         w.set_hfp_fcw_sel(false);
     });
     BT_RFC.vco_reg1().modify(|w| {
@@ -364,7 +404,7 @@ pub fn vco_cal_full() -> VcoCalResult {
         w.set_brf_pfdcp_en_lv(true);
     });
     BT_RFC.vco_reg3().modify(|w| {
-        w.set_brf_vco_idac_lv(0x40);
+        w.set_brf_vco_idac_lv(IDAC_INITIAL);
     });
 
     // Binary search variables
@@ -374,8 +414,8 @@ pub fn vco_cal_full() -> VcoCalResult {
     let mut capcode1: u8 = 0;
     let mut p0: u32 = 0;
     let mut p1: u32 = 0;
-    let mut error0: u32 = 0xFFFF_FFFF;
-    let mut error1: u32 = 0xFFFF_FFFF;
+    let mut error0: u32 = u32::MAX;
+    let mut error1: u32 = u32::MAX;
 
     for i in 1..9u32 {
         let acal_cnt = acal_binary_search();
@@ -522,17 +562,14 @@ pub fn vco_cal_full() -> VcoCalResult {
 
     // ---- KCAL computation (ch 0-39, pivot ch19) ----
     {
-        let const_a: u32 = 216 * 2048;
-        let const_b: f32 = 1.0 / 96800.0;
-
         BT_RFC.vco_reg2().modify(|w| {
             w.set_brf_vco_fkcal_en_lv(true);
         });
         BT_RFC.fbdv_reg2().modify(|w| {
-            w.set_brf_fkcal_cnt_divn_lv(17280);
+            w.set_brf_fkcal_cnt_divn_lv(FKCAL_DIVN_KCAL);
         });
         BT_PHY.tx_lfp_cfg().modify(|w| {
-            w.set_lfp_fcw(0x08);
+            w.set_lfp_fcw(LFP_FCW_CAL);
             w.set_lfp_fcw_sel(false);
         });
         // Set ch19 PDX/IDAC
@@ -542,7 +579,7 @@ pub fn vco_cal_full() -> VcoCalResult {
                 (result.capcode_tx[19] as u32) | ((result.idac_tx[19] as u32) << 8),
             ));
         BT_PHY.tx_hfp_cfg().modify(|w| {
-            w.set_hfp_fcw(0x00);
+            w.set_hfp_fcw(HFP_FCW_MIN);
             w.set_hfp_fcw_sel(false);
         });
 
@@ -552,7 +589,7 @@ pub fn vco_cal_full() -> VcoCalResult {
         });
 
         BT_PHY.tx_hfp_cfg().modify(|w| {
-            w.set_hfp_fcw(0x3F);
+            w.set_hfp_fcw(HFP_FCW_MAX);
         });
 
         let pmax = get_fbdv_cnt();
@@ -561,33 +598,30 @@ pub fn vco_cal_full() -> VcoCalResult {
         });
 
         let kcal_norm = if pmax > pmin {
-            const_a / (pmax - pmin)
+            KCAL_CONST_A / (pmax - pmin)
         } else {
-            200
+            KCAL_DEFAULT_NORM
         };
         debug!("KCAL 0-39: norm={} pmin={} pmax={}", kcal_norm, pmin, pmax);
 
         for i in 0..40usize {
             let p_delta =
                 (REF_RESIDUAL_CNT_TBL_TX[i] as i32) - (REF_RESIDUAL_CNT_TBL_TX[19] as i32);
-            let factor = 1.0f32 - 3.0 * (p_delta as f32) * const_b;
+            let factor = 1.0f32 - KCAL_FREQ_MULTIPLIER * (p_delta as f32) * KCAL_CONST_B_LOW;
             result.kcal[i] = ((kcal_norm as f32) * factor) as u16;
         }
     }
 
     // ---- KCAL computation (ch 40-78, pivot ch59) ----
     {
-        let const_a: u32 = 216 * 2048;
-        let const_b: f32 = 1.0 / 98400.0;
-
         BT_RFC.vco_reg2().modify(|w| {
             w.set_brf_vco_fkcal_en_lv(true);
         });
         BT_RFC.fbdv_reg2().modify(|w| {
-            w.set_brf_fkcal_cnt_divn_lv(17280);
+            w.set_brf_fkcal_cnt_divn_lv(FKCAL_DIVN_KCAL);
         });
         BT_PHY.tx_lfp_cfg().modify(|w| {
-            w.set_lfp_fcw(0x08);
+            w.set_lfp_fcw(LFP_FCW_CAL);
             w.set_lfp_fcw_sel(false);
         });
         // Set ch59 PDX/IDAC
@@ -597,7 +631,7 @@ pub fn vco_cal_full() -> VcoCalResult {
                 (result.capcode_tx[59] as u32) | ((result.idac_tx[59] as u32) << 8),
             ));
         BT_PHY.tx_hfp_cfg().modify(|w| {
-            w.set_hfp_fcw(0x00);
+            w.set_hfp_fcw(HFP_FCW_MIN);
             w.set_hfp_fcw_sel(false);
         });
 
@@ -607,7 +641,7 @@ pub fn vco_cal_full() -> VcoCalResult {
         });
 
         BT_PHY.tx_hfp_cfg().modify(|w| {
-            w.set_hfp_fcw(0x3F);
+            w.set_hfp_fcw(HFP_FCW_MAX);
         });
 
         let pmax = get_fbdv_cnt();
@@ -619,16 +653,16 @@ pub fn vco_cal_full() -> VcoCalResult {
         });
 
         let kcal_norm = if pmax > pmin {
-            const_a / (pmax - pmin)
+            KCAL_CONST_A / (pmax - pmin)
         } else {
-            200
+            KCAL_DEFAULT_NORM
         };
         debug!("KCAL 40-78: norm={} pmin={} pmax={}", kcal_norm, pmin, pmax);
 
         for i in 40..79usize {
             let p_delta =
                 (REF_RESIDUAL_CNT_TBL_TX[i] as i32) - (REF_RESIDUAL_CNT_TBL_TX[59] as i32);
-            let factor = 1.0f32 - 3.0 * (p_delta as f32) * const_b;
+            let factor = 1.0f32 - KCAL_FREQ_MULTIPLIER * (p_delta as f32) * KCAL_CONST_B_HIGH;
             result.kcal[i] = ((kcal_norm as f32) * factor) as u16;
         }
     }
@@ -715,14 +749,14 @@ pub fn vco_cal_full() -> VcoCalResult {
 /// Based on SDK PACAL section in `bt_rfc_lo_cal()`.
 fn pacal() {
     BT_RFC.trf_reg1().modify(|w| {
-        w.set_brf_trf_ldo_vref_sel_lv(0x0E);
+        w.set_brf_trf_ldo_vref_sel_lv(PA_LDO_VREF_SEL);
     });
     BT_RFC.rf_lodist_reg().modify(|w| {
         w.set_brf_lodist5g_bletx_en_lv(true);
     });
     BT_RFC.trf_reg2().modify(|w| {
-        w.set_brf_pa_unit_sel_lv(0x01);
-        w.set_brf_pa_bufload_sel_lv(1);
+        w.set_brf_pa_unit_sel_lv(PA_UNIT_SEL);
+        w.set_brf_pa_bufload_sel_lv(PA_BUFLOAD_SEL);
     });
     BT_RFC.trf_reg1().modify(|w| {
         w.set_brf_pa_buf_pu_lv(true);
@@ -753,7 +787,7 @@ fn pacal() {
     });
 
     // Wait for PACAL done
-    for _ in 0..10000 {
+    for _ in 0..10_000 {
         if BT_RFC.pacal_reg().read().pacal_done() {
             break;
         }
@@ -830,7 +864,7 @@ fn roscal() {
     });
 
     // Wait for ROSCAL done
-    for _ in 0..10000 {
+    for _ in 0..10_000 {
         if BT_RFC.roscal_reg2().read().roscal_done() {
             break;
         }
@@ -900,7 +934,7 @@ fn rccal() {
         w.set_rccal_start(true);
     });
 
-    // Wait for RCCAL done (timeout 20us)
+    // Wait for RCCAL done
     for _ in 0..20 {
         if BT_RFC.rcroscal_reg().read().rccal_done() {
             break;

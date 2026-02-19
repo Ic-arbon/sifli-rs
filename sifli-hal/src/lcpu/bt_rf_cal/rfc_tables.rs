@@ -127,12 +127,20 @@ pub fn store_txdc_cal_tables(
 
     // Replace EDR cal related commands in BT_TXON with WAIT commands
     // SDK: bt_rfc_txdc_cal lines 5001-5009
+
+    /// Number of command words to overwrite in BT_TXON EDR calibration section.
+    const BT_TXON_EDR_CAL_CMD_WORDS: u32 = 10;
+    /// Byte offset of the EDR calibration commands within the BT_TXON sequence.
+    const BT_TXON_EDR_CAL_OFFSET: u32 = 32 * 4;
+
+    let wait1 = rwbt::rfc::cmd::wait(1) as u32;
+    let wait1_pair = wait1 | (wait1 << 16); // Two WAIT(1) commands packed per word
     let bt_txon_addr = BT_RFC.cu_addr_reg3().read().bt_txon_cfg_addr() as u32;
-    for i in 0..10u32 {
+    for i in 0..BT_TXON_EDR_CAL_CMD_WORDS {
         unsafe {
             core::ptr::write_volatile(
-                (base + bt_txon_addr + 32 * 4 + i * 4) as *mut u32,
-                0x5001_5001, // Two WAIT(1) commands
+                (base + bt_txon_addr + BT_TXON_EDR_CAL_OFFSET + i * 4) as *mut u32,
+                wait1_pair,
             );
         }
     }
@@ -180,8 +188,8 @@ pub fn store_edr_lo_cal_tables(edr_lo: &EdrLoCalResult) {
         word |= (edr_lo.oslo_fc[i] as u32) << 16;
         // [24:20] OSLO BM
         word |= (edr_lo.oslo_bm[i] as u32) << 20;
-        // [31:28] TMXCAP default=6
-        word |= 6u32 << 28;
+        // [31:28] TMXCAP
+        word |= super::edr_lo::TMXCAP_DEFAULT << 28;
 
         // DPSK gain bits scattered across the word:
         // SDK: d0 = (dpsk_gain[i] >> 1) & 0x1  -> bit 15

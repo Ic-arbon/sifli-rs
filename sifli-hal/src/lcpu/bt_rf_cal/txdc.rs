@@ -36,6 +36,31 @@ const PHY_RX_DUMP_ADDR: u32 = super::super::memory_map::rf::PHY_RX_DUMP_ADDR;
 /// DMA buffer address in LPSYS EM memory (SDK: BT_RFC_TXDC_DMA_ADDR).
 const DMA_BUFFER_ADDR: u32 = super::super::memory_map::shared::EM_START as u32;
 
+/// DC offset center value (11-bit DAC midpoint).
+const DC_OFFSET_CENTER: u16 = 0x7E0;
+
+/// Default calibration coefficient 0.
+const DEFAULT_COEF0: u16 = 0x3000;
+
+/// Default calibration coefficient 1.
+const DEFAULT_COEF1: u16 = 0x1000;
+
+/// RX mixer phase for 750KHz (used during DC offset search).
+const MIXER_PHASE_750KHZ: u16 = 0x40;
+
+/// RX mixer phase for 1.5MHz (used during coef calibration).
+const MIXER_PHASE_1500KHZ: u16 = 0x80;
+
+/// Number of offset values to search around DC_OFFSET_CENTER.
+const OFFSET_SEARCH_RANGE: u16 = 64;
+
+/// BUCK COT_CTUNE value during calibration (higher switching frequency for stability).
+const BUCK_COT_CTUNE_CAL: u8 = 7;
+
+/// BUCK COT_CTUNE default value (restored after calibration).
+const BUCK_COT_CTUNE_DEFAULT: u8 = 4;
+
+
 /// Cosine table for mixer demodulation (16-point period, Q10 format)
 const COS_TABLE: [i16; 16] = [
     1024, 946, 724, 392, 0, -392, -724, -946, -1024, -946, -724, -392, 0, 392, 724, 946,
@@ -93,7 +118,7 @@ impl Default for TxdcCalConfig {
             // Default TMXBUF gain control values from SDK
             tmxbuf_gc: [2, 3, 3, 5, 5, 6, 8, 0xF],
             // Default EDR PA BM values from SDK
-            edr_pa_bm: [5, 5, 0xE, 0xA, 0x1B, 0x1F, 0x1F, 0x1F],
+            edr_pa_bm: super::DEFAULT_EDR_PA_BM,
         }
     }
 }
@@ -102,12 +127,11 @@ impl Default for TxdcCalConfig {
 ///
 /// These values are used as fallback when full calibration is not performed.
 pub fn default_txdc_cal() -> TxdcCalResult {
-    // Default values from SDK: offset centered at 0x7E0, coef0=0x3000, coef1=0x1000
     let default_point = TxdcCalPoint {
-        offset_i: 0x7E0,
-        offset_q: 0x7E0,
-        coef0: 0x3000,
-        coef1: 0x1000,
+        offset_i: DC_OFFSET_CENTER,
+        offset_q: DC_OFFSET_CENTER,
+        coef0: DEFAULT_COEF0,
+        coef1: DEFAULT_COEF1,
     };
 
     TxdcCalResult {
@@ -203,10 +227,10 @@ where
     F: Fn(u16),
 {
     let mut dc_out_min: i64 = i64::MAX;
-    let mut best_offset: u16 = 0x7E0;
+    let mut best_offset: u16 = DC_OFFSET_CENTER;
 
-    for j in 0..64u16 {
-        let data = (0x7E0 + j) & 0x7FF;
+    for j in 0..OFFSET_SEARCH_RANGE {
+        let data = (DC_OFFSET_CENTER + j) & 0x7FF;
         set_offset(data);
 
         capture_adc_samples(ch);
@@ -258,10 +282,10 @@ pub fn txdc_cal_full(
         if config.power_level_mask & (1 << level) == 0 {
             // Use default values for disabled levels
             result.points[level] = TxdcCalPoint {
-                offset_i: 0x7E0,
-                offset_q: 0x7E0,
-                coef0: 0x3000,
-                coef1: 0x1000,
+                offset_i: DC_OFFSET_CENTER,
+                offset_q: DC_OFFSET_CENTER,
+                coef0: DEFAULT_COEF0,
+                coef1: DEFAULT_COEF1,
             };
             continue;
         }
@@ -271,17 +295,17 @@ pub fn txdc_cal_full(
 
         // Set rx mixer phase to 750KHz for DC offset calibration
         BT_PHY.mixer_cfg1().modify(|w| {
-            w.set_rx_mixer_phase_1(0x40);
+            w.set_rx_mixer_phase_1(MIXER_PHASE_750KHZ);
         });
 
         // Configure BUCK for calibration
         PMUC.buck_cr1().modify(|w| {
-            w.set_cot_ctune(7);
+            w.set_cot_ctune(BUCK_COT_CTUNE_CAL);
         });
 
         // Fix coef1 for offset search
         BT_RFC.iq_pwr_reg1().modify(|w| {
-            w.set_tx_dc_cal_coef1(0x1000);
+            w.set_tx_dc_cal_coef1(DEFAULT_COEF1);
             w.set_tx_dc_cal_coef0(0);
         });
         BT_RFC.iq_pwr_reg2().modify(|w| {
@@ -348,20 +372,20 @@ pub fn txdc_cal_full(
 
         // Restore BUCK setting
         PMUC.buck_cr1().modify(|w| {
-            w.set_cot_ctune(4);
+            w.set_cot_ctune(BUCK_COT_CTUNE_DEFAULT);
         });
 
         // Set rx mixer phase to 1.5MHz for coef calibration
         BT_PHY.mixer_cfg1().modify(|w| {
-            w.set_rx_mixer_phase_1(0x80);
+            w.set_rx_mixer_phase_1(MIXER_PHASE_1500KHZ);
         });
 
         // Store calibration result
         result.points[level] = TxdcCalPoint {
             offset_i,
             offset_q,
-            coef0: 0x3000, // Fixed value
-            coef1: 0x1000, // Fixed value
+            coef0: DEFAULT_COEF0,
+            coef1: DEFAULT_COEF1,
         };
     }
 
