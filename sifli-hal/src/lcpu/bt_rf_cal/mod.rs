@@ -9,6 +9,7 @@
 //!
 //! Based on SDK `bt_rf_cal()` and related functions in `bt_rf_fulcal.c`.
 
+mod consts;
 #[cfg(feature = "edr-cal")]
 mod edr_lo;
 mod opt;
@@ -26,6 +27,9 @@ use crate::Peripheral;
 
 /// RFC SRAM base address
 const BT_RFC_MEM_BASE: u32 = super::memory_map::rf::BT_RFC_MEM_BASE;
+
+/// RF driver version: v6.0.0.
+const RF_DRIVER_VERSION: u32 = 0x0006_0000;
 
 /// Default EDR PA BM values for each power level (0-7)
 ///
@@ -375,13 +379,13 @@ pub fn bt_rf_cal(dma_ch: impl Peripheral<P = impl Channel>) {
 
     // Restore VCO thresholds to normal mode after TXDC cal (SDK:4664-4673)
     BT_RFC.vco_reg2().modify(|w| {
-        w.set_brf_vco_acal_vl_sel_lv(0x5);
-        w.set_brf_vco_acal_vh_sel_lv(0x7);
-        w.set_brf_vco_incfcal_vl_sel_lv(0x2);
-        w.set_brf_vco_incfcal_vh_sel_lv(0x5);
+        w.set_brf_vco_acal_vl_sel_lv(consts::VCO_ACAL_VL_NORMAL);
+        w.set_brf_vco_acal_vh_sel_lv(consts::VCO_ACAL_VH_NORMAL);
+        w.set_brf_vco_incfcal_vl_sel_lv(consts::VCO_INCFCAL_VL);
+        w.set_brf_vco_incfcal_vh_sel_lv(consts::VCO_INCFCAL_VH);
     });
     BT_RFC.vco_reg1().modify(|w| {
-        w.set_brf_vco_ldo_vref_lv(0xA);
+        w.set_brf_vco_ldo_vref_lv(consts::VCO_LDO_VREF);
     });
     rf_dump_checkpoint("AFTER_TXDC_CAL");
 
@@ -389,8 +393,8 @@ pub fn bt_rf_cal(dma_ch: impl Peripheral<P = impl Channel>) {
     opt::bt_rf_opt_cal();
     rf_dump_checkpoint("AFTER_OPT_CAL");
 
-    // SDK:5481 — store driver version
-    vco::set_driver_version(0x00060000);
+    // SDK:5481 — store driver version (v6.0.0)
+    vco::set_driver_version(RF_DRIVER_VERSION);
 
     // TODO: BQB co-channel config (SDK:5482-5486, BR_BQB_COCHANNEL_CASE)
     //   DEMOD_CFG8 BR_DEMOD_G/MU_DC/MU_ERR, DEMOD_CFG16 BR_HADAPT_EN

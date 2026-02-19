@@ -6,6 +6,60 @@
 use super::txdc::TxdcCalConfig;
 use crate::pac::{BT_MAC, BT_PHY, BT_RFC};
 
+/// Bluetooth channel used for TXDC calibration (2440 MHz).
+const CAL_CHANNEL: u8 = 38;
+
+/// TX DC calibration gain per power level (0-6).
+const DC_CAL_GAIN: [u8; 7] = [0x60, 0x60, 0x60, 0x70, 0x50, 0x30, 0x18];
+
+/// RVGA VCMREF default value (restored after calibration).
+const RVGA_VCMREF_DEFAULT: u8 = 2;
+
+/// RVGA VSTART default value (restored after calibration).
+const RVGA_VSTART_DEFAULT: u8 = 2;
+
+/// PFD/CP current setting for TXDC calibration.
+const PFDCP_ICP_SET_TXDC: u8 = 4;
+
+/// LPF RZ selection for TXDC calibration.
+const LPF_RZ_SEL_TXDC: u8 = 4;
+
+/// LPF RP4 selection for TXDC calibration.
+const LPF_RP4_SEL_TXDC: u8 = 5;
+
+/// LPF CZ selection for TXDC calibration.
+const LPF_CZ_SEL_TXDC: u8 = 2;
+
+/// LPF CP3 selection for TXDC calibration.
+const LPF_CP3_SEL_TXDC: u8 = 2;
+
+/// Power meter bias magnitude for TXDC calibration.
+const PWRMTR_BM_TXDC: u8 = 3;
+
+/// Power meter offset for TXDC calibration.
+const PWRMTR_OS_TXDC: u8 = 0x0F;
+
+/// RVGA gain control initial value for TXDC calibration.
+const RVGA_GC_INITIAL: u8 = 0xC;
+
+/// Default EDR PA BM value (restored after TXDC calibration).
+const EDR_PA_BM_DEFAULT: u8 = 7;
+
+/// Default TMXBUF GC GFSK value (restored after TXDC calibration).
+const TMXBUF_GC_GFSK_DEFAULT: u8 = 7;
+
+/// RVGA gain control for power level 2.
+const RVGA_GC_LEVEL2: u8 = 4;
+
+/// RVGA gain control for power levels 3-4.
+const RVGA_GC_LEVEL3_4: u8 = 0x10;
+
+/// RVGA gain control for power level 6.
+const RVGA_GC_LEVEL6: u8 = 6;
+
+/// Power meter BM for power level 6.
+const PWRMTR_BM_LEVEL6: u8 = 1;
+
 /// Configure hardware for TXDC calibration.
 ///
 /// This sets up the necessary registers before TXDC calibration can be performed.
@@ -93,12 +147,12 @@ pub(super) fn configure_for_txdc_cal() {
         w.set_mod_method_edr(true);
     });
 
-    // Force to BR mode and channel 38 (2440 MHz)
+    // Force to BR mode and calibration channel
     BT_MAC.dmradiocntl1().modify(|w| {
         w.set_force_nbt_ble(true);
         w.set_force_channel(true);
         w.set_force_syncword(true);
-        w.set_channel(38);
+        w.set_channel(CAL_CHANNEL);
     });
 
     // Force IQ power to level 0
@@ -119,22 +173,22 @@ pub(super) fn configure_for_txdc_cal() {
 
     // Configure PFD/CP current
     BT_RFC.pfdcp_reg().modify(|w| {
-        w.set_brf_pfdcp_icp_set_lv(4);
+        w.set_brf_pfdcp_icp_set_lv(PFDCP_ICP_SET_TXDC);
     });
 
     // Configure LPF parameters
     BT_RFC.lpf_reg().modify(|w| {
-        w.set_brf_lpf_rz_sel_lv(4);
-        w.set_brf_lpf_rp4_sel_lv(5);
-        w.set_brf_lpf_cz_sel_lv(2);
-        w.set_brf_lpf_cp3_sel_lv(2);
+        w.set_brf_lpf_rz_sel_lv(LPF_RZ_SEL_TXDC);
+        w.set_brf_lpf_rp4_sel_lv(LPF_RP4_SEL_TXDC);
+        w.set_brf_lpf_cz_sel_lv(LPF_CZ_SEL_TXDC);
+        w.set_brf_lpf_cp3_sel_lv(LPF_CP3_SEL_TXDC);
     });
 
     // Configure TRF EDR REG2 for power meter and ENABLE the power meter.
     BT_RFC.trf_edr_reg2().modify(|w| {
         w.set_brf_trf_edr_pwrmtr_gc_lv(0);
-        w.set_brf_trf_edr_pwrmtr_bm_lv(3);
-        w.set_brf_trf_edr_pwrmtr_os_lv(0x0F);
+        w.set_brf_trf_edr_pwrmtr_bm_lv(PWRMTR_BM_TXDC);
+        w.set_brf_trf_edr_pwrmtr_os_lv(PWRMTR_OS_TXDC);
         w.set_brf_trf_edr_pwrmtr_os_pn_lv(true);
         w.set_brf_trf_edr_pwrmtr_en_lv(true); // [BT_TXON] Power meter enable (0x40, bit 10)
     });
@@ -146,7 +200,7 @@ pub(super) fn configure_for_txdc_cal() {
 
     // Configure RBB gain
     BT_RFC.rbb_reg2().modify(|w| {
-        w.set_brf_rvga_gc_lv(0xC);
+        w.set_brf_rvga_gc_lv(RVGA_GC_INITIAL);
     });
 
     // Enable VGA gain force
@@ -190,9 +244,6 @@ pub(super) fn configure_for_txdc_cal() {
         w.set_brf_dac_start_lv(true);
     });
 
-    // Small delay for DAC to settle
-    crate::cortex_m_blocking_delay_us(10);
-
     // Disable auto INCCAL to prevent force_tx from corrupting INCCAL registers (SDK line 3083)
     BT_RFC.inccal_reg1().modify(|w| {
         w.set_vco3g_auto_incacal_en(false);
@@ -222,14 +273,7 @@ pub(super) fn configure_power_level(level: usize, config: &TxdcCalConfig) {
     });
 
     // Configure TX DC CAL gain based on power level
-    let dc_cal_gain = match level {
-        0..=2 => 0x60,
-        3 => 0x70,
-        4 => 0x50,
-        5 => 0x30,
-        6 => 0x18,
-        _ => 0x60,
-    };
+    let dc_cal_gain = DC_CAL_GAIN[level.min(DC_CAL_GAIN.len() - 1)];
 
     BT_PHY.tx_dc_cal_cfg2().write(|w| {
         w.set_tx_dc_cal_gain0(dc_cal_gain & 0x0F);
@@ -240,12 +284,12 @@ pub(super) fn configure_power_level(level: usize, config: &TxdcCalConfig) {
     match level {
         2 => {
             BT_RFC.rbb_reg2().modify(|w| {
-                w.set_brf_rvga_gc_lv(4);
+                w.set_brf_rvga_gc_lv(RVGA_GC_LEVEL2);
             });
         }
         3 => {
             BT_RFC.rbb_reg2().modify(|w| {
-                w.set_brf_rvga_gc_lv(0x10);
+                w.set_brf_rvga_gc_lv(RVGA_GC_LEVEL3_4);
             });
             BT_RFC.trf_edr_reg2().modify(|w| {
                 w.set_brf_trf_edr_pwrmtr_gc_lv(0);
@@ -259,7 +303,7 @@ pub(super) fn configure_power_level(level: usize, config: &TxdcCalConfig) {
                 w.set_brf_trf_edr_pwrmtr_gc_lv(0);
             });
             BT_RFC.rbb_reg2().modify(|w| {
-                w.set_brf_rvga_gc_lv(0x10);
+                w.set_brf_rvga_gc_lv(RVGA_GC_LEVEL3_4);
             });
         }
         5 => {
@@ -270,10 +314,10 @@ pub(super) fn configure_power_level(level: usize, config: &TxdcCalConfig) {
         6 => {
             BT_RFC.trf_edr_reg2().modify(|w| {
                 w.set_brf_trf_edr_pwrmtr_gc_lv(0);
-                w.set_brf_trf_edr_pwrmtr_bm_lv(1);
+                w.set_brf_trf_edr_pwrmtr_bm_lv(PWRMTR_BM_LEVEL6);
             });
             BT_RFC.rbb_reg2().modify(|w| {
-                w.set_brf_rvga_gc_lv(6);
+                w.set_brf_rvga_gc_lv(RVGA_GC_LEVEL6);
             });
         }
         _ => {}
@@ -323,10 +367,10 @@ pub(super) fn cleanup_txdc_cal() {
 
     // Restore IQ_PWR normal working values (SDK lines 4672-4679)
     BT_RFC.iq_pwr_reg2().modify(|w| {
-        w.set_brf_trf_edr_pa_bm_lv(7);
+        w.set_brf_trf_edr_pa_bm_lv(EDR_PA_BM_DEFAULT);
     });
     BT_RFC.iq_pwr_reg1().modify(|w| {
-        w.set_edr_tmxbuf_gc_gfsk(7);
+        w.set_edr_tmxbuf_gc_gfsk(TMXBUF_GC_GFSK_DEFAULT);
     });
 
     // Restore PHY RX state -- do NOT clear phy_rx_dump_en (SDK preserves it)
@@ -404,8 +448,8 @@ pub(super) fn cleanup_txdc_cal() {
 
     // Restore RBB vcmref/vstart (SDK line 4971)
     BT_RFC.rbb_reg3().modify(|w| {
-        w.set_brf_rvga_vcmref_lv(2);
-        w.set_brf_rvga_vstart_lv(2);
+        w.set_brf_rvga_vcmref_lv(RVGA_VCMREF_DEFAULT);
+        w.set_brf_rvga_vstart_lv(RVGA_VSTART_DEFAULT);
     });
 
     // Restore auto INCCAL (SDK lines 3576-3577)

@@ -34,10 +34,8 @@ critical-section = "1.2.0"
 cfg-if = { version = "1", features = ["core"] }
 futures-util = { version = "0.3.31", default-features = false }
 nb = "1.1.0"
-musb = { version = "0.3.0", features = [
-    "embassy-usb-driver-impl",
-    "prebuild",
-]}
+musb = { version = "0.3.0", features = ["embassy-usb-driver-impl", "prebuild"] }
+rwbt = { version = "0.1.0", features = ["sifli", "prebuild"] }
 
 # TODO: multicore critical-section impl
 cortex-m = { version = "0.7.7" }
@@ -125,4 +123,3 @@ unchecked-overclocking = []
 
 [package.metadata.docs.rs]
 default-target = "thumbv8m.main-none-eabihf"
-
