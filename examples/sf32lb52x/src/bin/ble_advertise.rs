@@ -23,7 +23,7 @@ use panic_probe as _;
 
 use trouble_host::prelude::*;
 
-use sifli_hal::bt_hci::IpcHciTransport;
+use sifli_hal::bt_hci::BleController;
 use sifli_hal::lcpu::LcpuConfig;
 use sifli_hal::rng::Rng;
 use sifli_hal::{bind_interrupts, ipc};
@@ -50,8 +50,8 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     info!("=== BLE Advertise Example ===");
 
-    // 1. BLE startup (IPC + LCPU power-on + HCI transport)
-    let transport = match IpcHciTransport::ble_init(
+    // 1. BLE startup (IPC + LCPU power-on + controller)
+    let controller: BleController = match BleController::new(
         p.LCPU,
         p.MAILBOX1_CH1,
         p.DMAC2_CH8,
@@ -60,7 +60,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
     )
     .await
     {
-        Ok(t) => t,
+        Ok(c) => c,
         Err(e) => {
             error!("BLE init failed: {:?}", e);
             cortex_m::asm::bkpt();
@@ -71,10 +71,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
     };
     info!("LCPU BLE is ready");
 
-    // 2. Create HCI controller
-    let controller: ExternalController<_, 4> = ExternalController::new(transport);
-
-    // 3. Initialize trouble-host Stack
+    // 2. Initialize trouble-host Stack
     let address = Address::random([0xC0, 0x12, 0x34, 0x56, 0x78, 0x9A]);
     info!("Address: {:?}", address);
 
@@ -89,14 +86,14 @@ async fn main(_spawner: embassy_executor::Spawner) {
         ..
     } = stack.build();
 
-    // 4. Create GATT server
+    // 3. Create GATT server
     let server = Server::new_with_config(GapConfig::Peripheral(PeripheralConfig {
         name: "SiFli-BLE",
         appearance: &appearance::UNKNOWN,
     }))
     .unwrap();
 
-    // 5. Run runner + advertise/connect loop concurrently
+    // 4. Run runner + advertise/connect loop concurrently
     info!("Starting advertising...");
     let _ = join(
         async {

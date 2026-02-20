@@ -15,7 +15,7 @@ use embassy_executor::Spawner;
 use embassy_futures::join::join;
 use embassy_futures::select::select;
 use embassy_time::{Duration, Timer};
-use sifli_hal::bt_hci::IpcHciTransport;
+use sifli_hal::bt_hci::BleController;
 use sifli_hal::lcpu::LcpuConfig;
 use sifli_hal::rcc::{
     clocks, reconfigure_sysclk, Config as RccConfig, ConfigBuilder, Dll, DllStage, HclkPrescaler,
@@ -89,7 +89,7 @@ async fn main(_spawner: Spawner) {
     print_clocks("boot");
 
     // --- BLE initialization at default 240 MHz ---
-    let transport = match IpcHciTransport::ble_init(
+    let controller: BleController = match BleController::new(
         p.LCPU,
         p.MAILBOX1_CH1,
         p.DMAC2_CH8,
@@ -98,9 +98,9 @@ async fn main(_spawner: Spawner) {
     )
     .await
     {
-        Ok(t) => {
+        Ok(c) => {
             info!("BLE initialized");
-            t
+            c
         }
         Err(e) => {
             error!("BLE init failed: {:?}", e);
@@ -110,8 +110,6 @@ async fn main(_spawner: Spawner) {
             }
         }
     };
-
-    let controller: ExternalController<_, 4> = ExternalController::new(transport);
     let address = Address::random([0xC0, 0x12, 0x34, 0x56, 0x78, 0x9A]);
     info!("BLE address: {:?}", address);
 
