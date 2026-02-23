@@ -1,14 +1,17 @@
-//! bt-hci Transport implementation, communicating with LCPU BT controller via IPC.
+//! BLE controller and HCI transport for communicating with the LCPU BT controller via IPC.
 //!
-//! This module provides a bt-hci compatible Transport wrapper for [`IpcQueue`],
-//! enabling communication with the LCPU Bluetooth controller using libraries
-//! like `bt-hci` and `trouble`.
+//! The primary entry point is [`BleController`], which handles LCPU power-on,
+//! IPC setup, and provides a bt-hci `Controller` implementation for use with
+//! libraries like `trouble`.
+//!
+//! For lower-level access, [`IpcHciTransport`] provides the raw bt-hci
+//! `Transport` trait.
 //!
 //! # Example
 //!
 //! ```no_run
-//! use sifli_hal::{bind_interrupts, ipc, bt_hci::IpcHciTransport};
-//! use bt_hci::controller::ExternalController;
+//! use sifli_hal::{bind_interrupts, ipc, bt_hci::BleController};
+//! use sifli_hal::lcpu::LcpuConfig;
 //!
 //! bind_interrupts!(struct Irqs {
 //!     MAILBOX2_CH1 => ipc::InterruptHandler;
@@ -16,20 +19,18 @@
 //!
 //! async fn example() {
 //!     let p = sifli_hal::init(Default::default());
-//!     let mut ipc_driver = ipc::Ipc::new(p.MAILBOX1_CH1, Irqs, ipc::Config::default());
-//!     let queue = ipc_driver.open_queue(ipc::QueueConfig::qid0_hci()).unwrap();
-//!
-//!     let transport = IpcHciTransport::new(queue);
-//!     let controller: ExternalController<_, 4> = ExternalController::new(transport);
-//!
-//!     // Now you can use bt-hci's type-safe API
-//!     // use bt_hci::cmd::controller_baseband::Reset;
-//!     // controller.exec(Reset).await.unwrap();
+//!     let controller = BleController::new(
+//!         p.LCPU, p.MAILBOX1_CH1, p.DMAC2_CH8, Irqs, &LcpuConfig::default(),
+//!     ).await.unwrap();
+//!     // `controller` implements bt-hci Controller traits directly
 //! }
 //! ```
 
+use bt_hci::cmd;
+use bt_hci::controller::{Controller, ControllerCmdAsync, ControllerCmdSync, ExternalController};
+use bt_hci::data;
 use bt_hci::transport::{Transport, WithIndicator};
-use bt_hci::{ControllerToHostPacket, HostToControllerPacket, ReadHci, ReadHciError, WriteHci};
+use bt_hci::{ControllerToHostPacket, FixedSizeValue, HostToControllerPacket, ReadHci, ReadHciError, WriteHci};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
 use embedded_io::ReadExactError;
@@ -231,46 +232,6 @@ pub struct IpcHciTransport {
 }
 
 impl IpcHciTransport {
-    /// Initialize BLE and create an HCI transport in one step.
-    ///
-    /// This combines IPC queue creation, LCPU BLE power-on, and transport
-    /// construction into a single call.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use sifli_hal::{bind_interrupts, ipc, bt_hci::IpcHciTransport};
-    /// use sifli_hal::lcpu::LcpuConfig;
-    ///
-    /// bind_interrupts!(struct Irqs {
-    ///     MAILBOX2_CH1 => ipc::InterruptHandler;
-    /// });
-    ///
-    /// async fn example() {
-    ///     let p = sifli_hal::init(Default::default());
-    ///     let transport = IpcHciTransport::ble_init(
-    ///         p.MAILBOX1_CH1, Irqs, p.DMAC2_CH8, &LcpuConfig::default(),
-    ///     ).await.unwrap();
-    /// }
-    /// ```
-    pub async fn ble_init(
-        lcpu_peri: impl Peripheral<P = peripherals::LCPU> + 'static,
-        mailbox: impl Peripheral<P = peripherals::MAILBOX1_CH1>,
-        dma_ch: impl Peripheral<P = impl Channel>,
-        irq: impl interrupt::typelevel::Binding<
-            interrupt::typelevel::MAILBOX2_CH1,
-            ipc::InterruptHandler,
-        >,
-        config: &LcpuConfig,
-    ) -> Result<Self, BleInitError> {
-        let mut ipc_driver = ipc::Ipc::new(mailbox, irq, ipc::Config::default());
-        let queue = ipc_driver.open_queue(ipc::QueueConfig::qid0_hci())?;
-        let (mut rx, tx) = queue.split();
-        let lcpu = Lcpu::new(lcpu_peri);
-        lcpu.ble_power_on(config, dma_ch, &mut rx).await?;
-        Ok(Self::from_parts(rx, tx))
-    }
-
     /// Create a new IPC HCI Transport.
     pub fn new(queue: IpcQueue) -> Self {
         let (rx, tx) = queue.split();
@@ -354,5 +315,112 @@ impl Transport for IpcHciTransport {
             .map_err(Error::Write)?;
         q.flush()?;
         Ok(())
+    }
+}
+
+/// High-level BLE controller that owns the LCPU and HCI transport.
+///
+/// Wraps [`Lcpu`] (for power management) and [`ExternalController`] (for HCI
+/// command dispatch) into a single type that implements the bt-hci `Controller`
+/// traits.
+///
+/// # Example
+///
+/// ```no_run
+/// use sifli_hal::{bind_interrupts, ipc, bt_hci::BleController};
+/// use sifli_hal::lcpu::LcpuConfig;
+///
+/// bind_interrupts!(struct Irqs {
+///     MAILBOX2_CH1 => ipc::InterruptHandler;
+/// });
+///
+/// async fn example() {
+///     let p = sifli_hal::init(Default::default());
+///     let controller = BleController::new(
+///         p.LCPU, p.MAILBOX1_CH1, p.DMAC2_CH8, Irqs, &LcpuConfig::default(),
+///     ).await.unwrap();
+///     // `controller` implements bt-hci Controller traits directly
+/// }
+/// ```
+pub struct BleController<const SLOTS: usize = 4> {
+    lcpu: Lcpu,
+    inner: ExternalController<IpcHciTransport, SLOTS>,
+}
+
+impl<const SLOTS: usize> BleController<SLOTS> {
+    /// Initialize BLE and create a controller in one step.
+    ///
+    /// This combines IPC queue creation, LCPU BLE power-on (with scoped wake),
+    /// and controller construction.
+    pub async fn new(
+        lcpu_peri: impl Peripheral<P = peripherals::LCPU> + 'static,
+        mailbox: impl Peripheral<P = peripherals::MAILBOX1_CH1>,
+        dma_ch: impl Peripheral<P = impl Channel>,
+        irq: impl interrupt::typelevel::Binding<
+            interrupt::typelevel::MAILBOX2_CH1,
+            ipc::InterruptHandler,
+        >,
+        config: &LcpuConfig,
+    ) -> Result<Self, BleInitError> {
+        let mut ipc_driver = ipc::Ipc::new(mailbox, irq, ipc::Config::default());
+        let queue = ipc_driver.open_queue(ipc::QueueConfig::qid0_hci())?;
+        let (mut rx, tx) = queue.split();
+        let lcpu = Lcpu::new(lcpu_peri);
+        lcpu.ble_power_on(config, dma_ch, &mut rx).await?;
+        let transport = IpcHciTransport::from_parts(rx, tx);
+        Ok(Self {
+            lcpu,
+            inner: ExternalController::new(transport),
+        })
+    }
+
+    /// Shut down BLE and power off LCPU.
+    pub fn shutdown(self) {
+        let Self { lcpu, .. } = self;
+        let _ = lcpu.power_off();
+    }
+}
+
+impl<const SLOTS: usize> embedded_io::ErrorType for BleController<SLOTS> {
+    type Error = Error;
+}
+
+impl<const SLOTS: usize> Controller for BleController<SLOTS> {
+    async fn write_acl_data(&self, packet: &data::AclPacket<'_>) -> Result<(), Self::Error> {
+        self.inner.write_acl_data(packet).await
+    }
+
+    async fn write_sync_data(&self, packet: &data::SyncPacket<'_>) -> Result<(), Self::Error> {
+        self.inner.write_sync_data(packet).await
+    }
+
+    async fn write_iso_data(&self, packet: &data::IsoPacket<'_>) -> Result<(), Self::Error> {
+        self.inner.write_iso_data(packet).await
+    }
+
+    async fn read<'a>(
+        &self,
+        buf: &'a mut [u8],
+    ) -> Result<ControllerToHostPacket<'a>, Self::Error> {
+        self.inner.read(buf).await
+    }
+}
+
+impl<C, const SLOTS: usize> ControllerCmdSync<C> for BleController<SLOTS>
+where
+    C: cmd::SyncCmd,
+    C::Return: FixedSizeValue,
+{
+    async fn exec(&self, cmd: &C) -> Result<C::Return, cmd::Error<Self::Error>> {
+        ControllerCmdSync::exec(&self.inner, cmd).await
+    }
+}
+
+impl<C, const SLOTS: usize> ControllerCmdAsync<C> for BleController<SLOTS>
+where
+    C: cmd::AsyncCmd,
+{
+    async fn exec(&self, cmd: &C) -> Result<(), cmd::Error<Self::Error>> {
+        ControllerCmdAsync::exec(&self.inner, cmd).await
     }
 }

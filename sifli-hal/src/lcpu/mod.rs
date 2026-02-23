@@ -205,6 +205,24 @@ pub enum CoreId {
 // LCPU driver type
 //=============================================================================
 
+/// RAII guard for LCPU wakeup reference count.
+/// Calls `cancel_lcpu_active_request()` on drop.
+pub(crate) struct WakeGuard(());
+
+impl WakeGuard {
+    /// Acquire: calls `wake_lcpu()`, incrementing the reference count.
+    pub(crate) unsafe fn acquire() -> Self {
+        rcc::wake_lcpu();
+        Self(())
+    }
+}
+
+impl Drop for WakeGuard {
+    fn drop(&mut self) {
+        unsafe { rcc::cancel_lcpu_active_request() };
+    }
+}
+
 /// LCPU driver (blocking).
 pub struct Lcpu {
     _lcpu: crate::PeripheralRef<'static, crate::peripherals::LCPU>,
@@ -233,8 +251,8 @@ impl Lcpu {
     /// BLE boot sequence (async).
     ///
     /// Compared to [`power_on`](Self::power_on), this method additionally:
-    /// 1. Keeps LCPU awake after boot (calls `rcc::wake_lcpu()`)
-    /// 2. Waits for and consumes the BT stack warmup event
+    /// 1. Waits for and consumes the BT stack warmup event
+    /// 2. Runs controller initialization (sleep timing, MAC clock, etc.)
     ///
     /// ## Warmup Event
     ///
@@ -282,22 +300,28 @@ impl Lcpu {
         // 0. Write NVDS to LCPU shared memory (SDK: bt_stack_nvds_init)
         //    Must complete before LCPU boot; ROM reads this to initialize BT parameters.
         //    Wake LCPU first to ensure shared memory is accessible.
-        unsafe { rcc::wake_lcpu() };
-        nvds::write_default(&config.ble.bd_addr, config.boot.rom.enable_lxt);
-        unsafe { rcc::cancel_lcpu_active_request() };
+        {
+            let _w = unsafe { WakeGuard::acquire() };
+            nvds::write_default(&config.ble.bd_addr, config.boot.rom.enable_lxt);
+        }
 
         // 1. Execute standard boot sequence
         self.power_on(config, dma_ch)?;
 
-        // 2. Keep LCPU awake (power_on allowed sleep at the end)
-        unsafe { rcc::wake_lcpu() };
+        // 2. Warmup + controller init (scoped wake)
+        //    SDK lcpu_power_on() releases HP2LP_REQ at the end, allowing LCPU
+        //    to sleep between BLE events.  We mirror that by scoping the wake.
+        {
+            let _w = unsafe { WakeGuard::acquire() };
 
-        // 3. Read and discard warmup event
-        consume_warmup_event(hci_rx).await?;
+            // Read and discard warmup event
+            consume_warmup_event(hci_rx).await?;
 
-        // 4. Controller initialization (SDK: bluetooth_init)
-        //    Includes: sleep timing + MAC clock + CFO tracking + disable BLE sleep
-        controller::init(&config.ble.controller);
+            // Controller initialization (SDK: bluetooth_init)
+            //    Includes: sleep timing + MAC clock + CFO tracking + sleep control
+            controller::init(&config.ble.controller);
+        }
+        // _w drops → cancel_lcpu_active_request, LCPU can sleep between BLE events
 
         Ok(())
     }
@@ -308,11 +332,9 @@ impl Lcpu {
         config: &LcpuConfig,
         dma_ch: impl Peripheral<P = impl Channel>,
     ) -> Result<(), LcpuError> {
-        // 1. Wake LCPU.
+        // 1. Wake LCPU (guard ensures cancel on early return).
         debug!("Step 1: Waking up LCPU");
-        unsafe {
-            rcc::wake_lcpu();
-        }
+        let _w = unsafe { WakeGuard::acquire() };
 
         // 2. Reset and halt LCPU.
         debug!("Step 2: Resetting and halting LCPU");
@@ -363,11 +385,7 @@ impl Lcpu {
         debug!("Step 8: Releasing LCPU to run");
         self.release_lcpu()?;
 
-        // 9. Clear HP2LP_REQ, allow LP to enter low power.
-        unsafe {
-            rcc::cancel_lcpu_active_request();
-        }
-
+        // _w drops here → cancel_lcpu_active_request, allow LP to enter low power.
         Ok(())
     }
 
